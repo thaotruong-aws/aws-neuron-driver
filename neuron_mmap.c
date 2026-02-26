@@ -9,6 +9,7 @@
 #include <linux/capability.h>
 #include <linux/fault-inject.h>
 #include "neuron_mmap.h"
+#include "neuron_pci.h"
 #include "neuron_device.h"
 #include "neuron_dhal.h"
 
@@ -126,7 +127,7 @@ static void nmmap_remove_node_rbtree(struct rb_root *root, struct nmmap_node *mm
 	rb_erase(&mmap->node, root);
 }
 
-void nmmap_create_node(struct neuron_device *nd, void *va, pid_t pid, u64 size, u64 pa)
+void nmmap_create_node(struct neuron_device *nd, void *va, pid_t pid, u64 size, u64 pa, u64 neuron_pa)
 {
 	// Now insert the va in rb tree
 	int slot;
@@ -150,6 +151,7 @@ void nmmap_create_node(struct neuron_device *nd, void *va, pid_t pid, u64 size, 
 	mmap->device_index = nd->device_index;
 	mmap->free_callback = NULL;
 	mmap->dmabuf_ref_cnt = 0;
+	mmap->neuron_pa = neuron_pa;
 	write_lock(&nd->mpset.rbmmaplock);
 	nmmap_insert_node_rbtree(&nd->mpset.mmap_root[slot], mmap);
 	write_unlock(&nd->mpset.rbmmaplock);
@@ -347,7 +349,7 @@ static int nmmap_dm_mc(struct neuron_device *nd, struct vm_area_struct *vma, str
 
 	// Insert the virtual address into tree so that we can do search using VA
 	nmmap_create_node(nd, (void *)vma->vm_start, task_tgid_nr(current),
-			  (u64)(vma->vm_end - vma->vm_start), (bar4_offset + nd->npdev.bar4_pa));
+			  (u64)(vma->vm_end - vma->vm_start), (bar4_offset + nd->npdev.bar4_pa), pa);
 
 	// set the vm ops to cleanup on unmap
 	vma->vm_private_data = (void *)nd;
@@ -404,7 +406,7 @@ static int nmap_dm_special(struct neuron_device *nd, struct vm_area_struct *vma)
 
 	// Insert the virtual address into tree so that we can do search using VA
 	nmmap_create_node(nd, (void *)vma->vm_start, task_tgid_nr(current),
-					  size, (offset + bar_pa));
+					  size, (offset + bar_pa), (u64)-1);
 
 	// set the vm ops to cleanup on unmap
 	vma->vm_private_data = (void *)nd;
@@ -457,9 +459,54 @@ int nmmap_mem(struct neuron_device *nd, struct vm_area_struct *vma)
 
 	// Insert the virtual address into tree so that we can do search using VA
 	nmmap_create_node(nd, (void *)vma->vm_start, task_tgid_nr(current),
-			  (u64)(vma->vm_end - vma->vm_start), mc->pa);
+			  (u64)(vma->vm_end - vma->vm_start), mc->pa, (u64)-1);
 	// set the vm ops to cleanup on unmap
 	vma->vm_private_data = (void *)nd;
 	vma->vm_ops = &nmmap_dm_vm_ops;
 	return 0;
 }
+
+/**
+ * slightly modified version of neuron_p2p_register_and_get_pa(), used to find Neuron device and its HBM index that VA
+ * pointing at
+ *
+ */
+int nmmap_get_va_placement(void *va, int *device_index, int *hbm_index)
+{
+	int i, hbm;
+	struct neuron_device *nd;
+	u64 hbm_pa = (u64)-1;
+
+	for (i = 0; i < MAX_NEURON_DEVICE_COUNT; i++) {
+		nd = neuron_pci_get_device(i);
+		if (!nd) {
+			continue;
+		}
+		write_lock(&nd->mpset.rbmmaplock); // TODO read_lock
+		struct nmmap_node *mmap = nmmap_search_va(nd, va);
+		if (mmap != NULL) {
+			// note that we just want to use PA to identify HBM index, we don't need to
+			// adjust the offset if VA is pointing to the middle of mmap'ed region since
+			// it's not possible to have a single mmap that crosses to another HBM
+			hbm_pa = mmap->neuron_pa;
+			*device_index = i;
+		}
+		write_unlock(&nd->mpset.rbmmaplock);
+		if (hbm_pa != (u64)-1) { // found it, now find HBM
+			for (hbm = 0; hbm < ndhal->ndhal_address_map.dram_channels; hbm++) {
+				u64 start = ndhal->ndhal_mpset.device_dram_effective_base_addr[hbm];
+				u64 end = ndhal->ndhal_mpset.device_dram_end_addr[hbm];
+				if (hbm_pa >= start && hbm_pa < end) {
+					*hbm_index = hbm;
+					return 0;
+				}
+			}
+			// if we got here something is wrong, this is a valid VA but PA does not match any of the HBMs
+			pr_err("VA belongs to device: %d but PA %llx does not match any of the HBMs", i, hbm_pa);
+			return -ENXIO;
+		}
+	}
+	return -ENXIO;
+}
+
+

@@ -188,7 +188,8 @@ static int ncdev_dma_queue_init_batch(struct neuron_device *nd, void *param)
 
 	ret = neuron_copy_from_user(__func__, arg, (struct neuron_ioctl_dma_queue_init_batch *)param, sizeof(struct neuron_ioctl_dma_queue_init_batch));
 	if (ret) {
-		return -EACCES;
+		ret = -EACCES;
+		goto done;
 	}
 
 	if (arg->count >= MAX_DMA_QUEUE_INIT_BATCH) {
@@ -1200,7 +1201,7 @@ static int ncdev_mem_buf_zerocopy64(struct neuron_device *nd, unsigned int cmd, 
 		      IS_ALIGNED(offset, 4);
 
 	// For smallish transfers, just do "copy from" directly to bar4
-	// simulation (inkling) does not have bar4 mapped to the actual memory, don't do it
+	// simulation does not have bar4 mapped to the actual memory, don't do it
 	if (use_bar4_wr) {
 		u64 cpy_offset;
 		ndhal->ndhal_mmap.mmap_get_bar4_offset(mc->pa + offset, size, &cpy_offset);
@@ -1371,7 +1372,7 @@ static int ncdev_mem_buf_zerocopy64_batch(struct neuron_device *nd, void *param)
 		}
 
 		// For smallish transfers, just do "copy from" directly to bar4
-		// simulation (inkling) does not have bar4 mapped to the actual memory, don't do it
+		// simulation does not have bar4 mapped to the actual memory, don't do it
 		if (use_bar4_wr) {
 			for (j = 0; j < batch->num_ops; j++) {
 				const nrt_tensor_batch_op_t op = batch->ops_ptr[j];
@@ -1397,12 +1398,14 @@ static int ncdev_mem_buf_zerocopy64_batch(struct neuron_device *nd, void *param)
 
 			if (!ndmar_qid_valid(qid)) {
 				pr_err("nd%02d: invalid h2t queue index %d", nd->device_index, qid);
-				return -ENOENT;
+				ret = -ENOENT;
+				goto cleanup;
 			}
 
 			if (!ndma_zerocopy_supported()) {
 				pr_err_once("nd%02d: zero copy is not supported for architectures requiring DMA retry", nd->device_index);
-				return -EINVAL;
+				ret = -EINVAL;
+				goto cleanup;
 			}
 
 			// use the zero-copy batch function for ops within a single batch
@@ -1480,9 +1483,25 @@ static long ncdev_bar_read(struct neuron_device *nd, u8 bar, u64 *reg_addresses,
 	int i;
 	if (bar == 0 || bar == 2) {
 		u32 *data = NULL;
+
+		for (i = 0; i < data_count; i++) {
+			u64 bar_addr = (u64)nd->npdev.bar0;
+			u64 bar_size = nd->npdev.bar0_size;
+
+			// From V2 arch onwards, nd->npdev.bar2 (axi_bar) is no longer initialized
+			// TODO: Remove bar2 fields
+
+			// nd->npdev.bar0 is initialized to APB bar
+			// On V2 arch, APB bar is 0 usually, but 2 in case of QEMU
+
+			if ((reg_addresses[i] < bar_addr) || (reg_addresses[i] >= bar_addr + bar_size)) {
+				return -EINVAL;
+			}
+		}
 		data = kmalloc(data_size, GFP_KERNEL);
 		if (data == NULL)
 			return -ENOMEM;
+
 		ret = ndhal->ndhal_reg_access.reg_read32_array((void **)reg_addresses, data, data_count);
 		if (ret) {
 			kfree(data);
@@ -1541,8 +1560,10 @@ static int ncdev_bar_write_data(struct neuron_device *nd, u8 bar, u64 *reg_addre
 	if (bar == 0) {
 		int i;
 		for (i = 0; i < data_count; i++) {
-			u64 off = reg_addresses[i] - (u64)nd->npdev.bar0;
-			if (off > nd->npdev.bar0_size) {
+			u64 bar_addr = (u64)nd->npdev.bar0;
+			u64 bar_size = nd->npdev.bar0_size;
+			u64 off = reg_addresses[i] - bar_addr;
+			if ((reg_addresses[i] < bar_addr) || (reg_addresses[i] >= bar_addr + bar_size)) {
 				return -EINVAL;
 			}
 			if (ndhal->ndhal_ndma.ndma_is_bar0_write_blocked(off)) {
@@ -2999,6 +3020,39 @@ static int ncdev_power_profile_set(struct neuron_device *nd, void *param)
 	return ndhal->ndhal_perf.perf_set_profile(nd, arg.profile);
 }
 
+static int ncdev_throttling_notifications_set(struct neuron_device *nd, void *param)
+{
+	struct neuron_ioctl_throttling_notifications arg;
+	int ret;
+
+	ret = neuron_copy_from_user(__func__, &arg, (struct neuron_ioctl_throttling_notifications*) param, sizeof(arg));
+	if (ret)
+		return ret;
+
+	return fw_io_enable_throttling_notifications(nd->fw_io_ctx, arg.enable ? true : false);
+}
+
+static int ncdev_get_va_placement(void *param)
+{
+	struct neuron_ioctl_get_va_placement arg;
+	int ret, unused;
+	int device_index, hbm_index;
+	ret = neuron_copy_from_user(__func__, &arg, (struct neuron_ioctl_get_va_placement*) param, sizeof(arg));
+	if (ret)
+		return ret;
+
+	ret = nmmap_get_va_placement((void*)arg.va, &device_index, &hbm_index);
+	if (!ret) {
+		arg.device_index = device_index;
+		arg.hbm_index = hbm_index;
+	} else {
+		arg.device_index = -1;
+		arg.hbm_index = -1;
+	} 
+	unused = copy_to_user(param, &arg, sizeof(arg));
+	return ret;
+}
+
 inline static long ncdev_misc_ioctl(struct file *filep, unsigned int cmd, unsigned long param) {
 	if ((cmd == NEURON_IOCTL_CRWL_NC_RANGE_MARK) || (cmd == NEURON_IOCTL_CRWL_NC_RANGE_MARK_EXT0)) {
 		return ncdev_crwl_nc_range_mark(filep, cmd, (void *)param);
@@ -3031,6 +3085,8 @@ inline static long ncdev_misc_ioctl(struct file *filep, unsigned int cmd, unsign
 		return ncdev_pod_status(cmd, (void *)param);
 	} else if (_IOC_NR(cmd) == _IOC_NR(NEURON_IOCTL_POD_CTRL)) {
 		return ncdev_pod_ctrl(filep, cmd, (void *)param);
+	} else if (_IOC_NR(cmd) == _IOC_NR(NEURON_IOCTL_GET_VA_PLACEMENT)) {
+		return ncdev_get_va_placement((void *)param);
 	}
 
 	pr_err("invalid misc IOCTL %d (dir=%d, type=%d, nr=%d, size=%d)\n", cmd, _IOC_DIR(cmd),
@@ -3226,6 +3282,8 @@ static long ncdev_ioctl(struct file *filep, unsigned int cmd, unsigned long para
 		return ncdev_h2t_dma_free_queues(nd, cmd, (void*)param);
 	} else if (cmd == NEURON_IOCTL_POWER_PROFILE) {
 		return ncdev_power_profile_set(nd, (void*)param);
+	} else if (cmd == NEURON_IOCTL_THROTTLING_NOTIFICATIONS) {
+		return ncdev_throttling_notifications_set(nd, (void*)param);
 	}
 
 	// B/W compatibility
@@ -3500,6 +3558,8 @@ static inline int ncdev_init_device_node(struct ncdev *devnode, const char *dev_
 		return ret;
 	}
 	devnode->device = device;
+	devnode->minor = minor;
+	devnode->ndev = ndev;
 
 	ret = sysfs_create_group(&(device->kobj), &attr_group);
 	if (ret) {
@@ -3517,9 +3577,6 @@ static inline int ncdev_init_device_node(struct ncdev *devnode, const char *dev_
 		cdev_del(cdev);
 		return -1;
 	}
-
-	devnode->minor = minor;
-	devnode->ndev = ndev;
 
 	return 0;
 }

@@ -52,10 +52,29 @@ union fw_io_req_perfprofile_data {
 	uint32_t raw[2];
 };
 
+struct fw_io_get_data_request {
+	uint8_t type;			// fw_io_data_request_type
+	uint8_t reserved[3];	// reserved for future use/alignment
+};
+
+// Feature bitmap for FW_IO_CMD_SET_FEATURE
+// Each bit represents a different feature that can be enabled/disabled
+enum fw_io_feature_bits {
+	FW_IO_FEATURE_THROTTLING_NOTIFICATIONS = (0x1 << 0),  // bit 0: enable throttling notifications
+};
+
+/*
+ * Note:
+ * GET_DATA can retrieve information such as current power profile,
+ * but there's no corresponding GET_FEATURE to read current feature bitmap.
+ * This limitation affects fw_io_enable_throttling_notifications (see note).
+ */ 
 enum {
 	FW_IO_CMD_READ = 1, // read a register value
 	FW_IO_CMD_POST_TO_CW = 2, // post given blob as metrics to CloudWatch
-	FW_IO_CMD_SET_POWER_PROFILE = 3 // set power profile
+	FW_IO_CMD_SET_POWER_PROFILE = 3, // set power profile
+	FW_IO_CMD_GET_DATA = 4, // get various FW data (see fw_io_get_data_request)
+	FW_IO_CMD_SET_FEATURE = 5 // set feature bitmap
 };
 
 enum {
@@ -146,9 +165,7 @@ struct fw_io_ctx {
 #define UINT64_LOW(x) ((u32)(((u64)(x)) & 0xffffffffULL))
 #define UINT64_HIGH(x) ((u32)((x) >> 32))
 
-#define FW_IO_CMD_MAX 4
-
-#define FW_IO_CMD_MAX 4
+#define FW_IO_CMD_MAX 6
 
 // Wait up to 30 seconds in worst case.
 // Hardware can in some cases take longer to come out of reset but for some reads
@@ -160,7 +177,7 @@ struct fw_io_ctx {
 // max number of registers can be read in single function call
 #define FW_IO_MAX_READLESS_READ_REGISTER_COUNT 100
 
-// Min Pacific API version for new readless read framework
+// Min Firmware API version for new readless read framework
 #define FW_IO_NEW_READLESS_READ_MIN_API_VERSION 7
 #define FW_IO_POWER_MIN_API_VERSION 3
 
@@ -371,11 +388,12 @@ int fw_io_ecc_read(void *bar0, uint64_t ecc_offset, uint32_t *ecc_err_count);
 int fw_io_serial_number_read(void *bar0, uint64_t *serial_number);
 
 /**
- * fw_io_get_total_uecc_err_count() - Get UE ecc error count
+ * fw_io_get_total_ecc_err_counts() - Get UE ecc error count
  * @param bar0: from bar
- * @return err count
+ * @param ue_ecc_count: Pointer to the ue counter
+ * @param repairable_err_count: Pointer to the repairable counter
  */
-uint32_t fw_io_get_total_uecc_err_count(void *bar0);
+void fw_io_get_total_ecc_err_counts(void *bar0, uint32_t *ue_ecc_count, uint32_t *repairable_ecc_count);
 
 /**
  * fw_io_hbm_uecc_repair_state_read() - Get HBM UE ecc repair state
@@ -414,4 +432,12 @@ int fw_io_execute_request_new(struct fw_io_ctx *ctx, u8 command_id, const u8 *re
  * @return 0 on success, negative on failure
  */
 int fw_io_set_power_profile(struct fw_io_ctx *ctx, uint32_t profile);
+
+/**
+ * fw_io_enable_throttling_notifications() - Enable throttling notifications
+ * @param ctx: FWIO context
+ * @param enable: true to enable, false to disable
+ * @return 0 on success, negative on failure
+ */
+int fw_io_enable_throttling_notifications(struct fw_io_ctx *ctx, bool enable);
 #endif

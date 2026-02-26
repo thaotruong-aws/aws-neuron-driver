@@ -814,26 +814,6 @@ static int nsysfsmetric_init_and_add_root_node(struct nsysfsmetric_metrics *metr
     return 0;
 }
 
-static void nsysfsmetric_destroy_nodes(struct nsysfsmetric_node *node)
-{
-    int i;
-
-    if (node->child_node_num == 0) {
-        return;
-    }
-
-    mutex_lock(&node->lock);
-
-    for (i = 0; i < node->child_node_num; i++) {
-        struct nsysfsmetric_node *child_node = node->child_nodes[i];
-        nsysfsmetric_destroy_nodes(child_node); // destroy node's children recursively
-        kobject_put(&child_node->kobj);
-    }
-    node->child_node_num = 0;
-
-    mutex_unlock(&node->lock);
-}
-
 static int nsysfsmetric_get_metric_id(int metric_id_category, int id)
 {
     int metric_id;
@@ -975,9 +955,47 @@ int nsysfsmetric_register(struct neuron_device *nd, struct kobject *neuron_devic
     return 0;
 }
 
+static void nsysfsmetric_destroy_counters(struct nsysfsmetric_metrics *metrics)
+{
+    // cleanup sysfs counters
+    // zero them out and set the sysfs node they are pointing to as NULL
+    // preventing use after free scenarios caused by attempts to access
+    // sysfs after it is destroyed.
+    memset(metrics->nrt_metrics, 0, sizeof(metrics->nrt_metrics));
+    memset(metrics->nrt_nd_metrics, 0, sizeof(metrics->nrt_nd_metrics));
+    memset(metrics->dev_metrics, 0, sizeof(metrics->dev_metrics));
+}
+
+static void nsysfsmetric_destroy_nodes(struct nsysfsmetric_node *node, bool acquire_lock)
+{
+    int i;
+
+    if (node->child_node_num == 0) {
+        return;
+    }
+
+    if (acquire_lock == true) {
+        mutex_lock(&node->lock);
+    }
+
+    for (i = 0; i < node->child_node_num; i++) {
+        struct nsysfsmetric_node *child_node = node->child_nodes[i];
+        nsysfsmetric_destroy_nodes(child_node, true); // destroy node's children recursively
+        kobject_put(&child_node->kobj);
+    }
+    node->child_node_num = 0;
+
+    if (acquire_lock == true) {
+        mutex_unlock(&node->lock);
+    }
+}
+
 void nsysfsmetric_destroy(struct neuron_device *nd)
 {
-    nsysfsmetric_destroy_nodes(&nd->sysfs_metrics.root);
+    mutex_lock(&nd->sysfs_metrics.root.lock);
+    nsysfsmetric_destroy_counters(&nd->sysfs_metrics);
+    nsysfsmetric_destroy_nodes(&nd->sysfs_metrics.root, false);
+    mutex_unlock(&nd->sysfs_metrics.root.lock);
 }
 
 int nsysfsmetric_init_and_add_dynamic_counter_nodes(struct neuron_device *nd, uint64_t ds_val)

@@ -48,7 +48,8 @@
 // Number of DMA queues in each engine
 #define V2_DMA_QUEUE_PER_ENG 16
 
-#define V2_NUM_DMA_ENG_PER_DEVICE (V2_NC_PER_DEVICE * V2_DMA_ENG_PER_NC) + 2
+#define V2_NUM_H2D_DMA_PER_DEVICE 2
+#define V2_NUM_DMA_ENG_PER_DEVICE (V2_NC_PER_DEVICE * V2_DMA_ENG_PER_NC) + V2_NUM_H2D_DMA_PER_DEVICE
 #define V2_MAX_DMA_RINGS 16
 
 // Number of TPB engines per NC

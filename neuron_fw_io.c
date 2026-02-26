@@ -233,14 +233,18 @@ static const u32 fw_io_cmd_timeout_tbl[FW_IO_CMD_MAX] = {
 	0,                   // cmd 0
 	(1000 * 1000 * 1),   // cmd 1 (FW_IO_CMD_READ)
 	(1000 * 1000 * 1),   // cmd 2 (FW_IO_CMD_POST_TO_CW)
-	(1000 * 1000 * 60)   // cmd 3 (FW_IO_CMD_SET_POWER_PROFILE)
+	(1000 * 1000 * 60),  // cmd 3 (FW_IO_CMD_SET_POWER_PROFILE)
+	(1000 * 1000 * 1),   // cmd 4 (FW_IO_CMD_GET_DATA)
+	(1000 * 1000 * 60),   // cmd 5 (FW_IO_CMD_SET_FEATURE)
 };
 
 static const u32 fw_io_cmd_retry_tbl[FW_IO_CMD_MAX] = {
 	0,   // cmd 0
 	15,  // cmd 1 (FW_IO_CMD_READ)
 	15,  // cmd 2 (FW_IO_CMD_POST_TO_CW)
-	3    // cmd 3 (FW_IO_CMD_SET_POWER_PROFILE)
+	3,   // cmd 3 (FW_IO_CMD_SET_POWER_PROFILE)
+	3,   // cmd 4 (FW_IO_CMD_GET_DATA)
+	3,   // cmd 5 (FW_IO_CMD_SET_FEATURE)
 };
 
 static u32 crc32c(const u8 *hdr, const u8 *data, size_t len) 
@@ -352,7 +356,7 @@ int fw_io_execute_request_new(struct fw_io_ctx *ctx, u8 command_id, const u8 *re
 	ret = fw_io_api_version_read(ctx->bar0, &api_version_num);
 
 	if ((ret != 0) || (api_version_num < FW_IO_NEW_READLESS_READ_MIN_API_VERSION)) {
-		pr_info_once("Pacific version %d, using legacy Pacific/Runtime comm framework", api_version_num);
+		pr_info_once("Firmware version %d, using legacy Firmware/Runtime comm framework", api_version_num);
 		return -ENOTSUPP;
 	}
 
@@ -657,6 +661,7 @@ struct fw_io_ctx *fw_io_setup(void __iomem *bar0, u64 bar0_size,
 	ctx->next_seq_num = 1;
 	mutex_init(&ctx->lock);
 
+	ctx->request_response_size = FW_IO_MAX_SIZE;
 	ctx->request = kmalloc(FW_IO_MAX_SIZE, GFP_ATOMIC);
 	if (ctx->request == NULL) {
 		pr_err("memory allocation failed\n");
@@ -705,11 +710,27 @@ void fw_io_destroy(struct fw_io_ctx *ctx)
 	kfree(ctx);
 }
 
-uint32_t fw_io_get_total_uecc_err_count(void *bar0) {
+static inline uint32_t uncorrectable_ecc_err_count(uint32_t api_version, uint32_t ecc_err_count) {
+	// API Version<6:  bitfield[15:0] Uncorrectable Errors
+	// API Version>=6: bitfield[15:12] Uncorrectable Errors
+	return (api_version >= 6) ? ((ecc_err_count >> 12) & 0xf) : (ecc_err_count & 0xffff);
+}
+
+static inline uint32_t repairable_ecc_err_count(uint32_t api_version, uint32_t ecc_err_count) {
+	// API Version<6: N/A
+	// API Version>=6: bitfield[11:0] Repairable Errors
+	return (api_version >= 6) ? (ecc_err_count & 0xfff) : 0;
+}
+
+void fw_io_get_total_ecc_err_counts(void *bar0, uint32_t *ue_ecc_count, uint32_t *repairable_ecc_count) {
 	uint32_t total_uncorrected_ecc_err_count = 0;
+	uint32_t total_repairable_ecc_err_count = 0;
 	uint32_t channel = 0;
 	uint32_t ecc_err_count = 0;
 	uint64_t ecc_offset = 0;
+
+	uint32_t api_version;
+	fw_io_api_version_read(bar0, &api_version);
 
 	for (channel = 0; channel < ndhal->ndhal_address_map.dram_channels; channel++) {
 		ecc_offset = FW_IO_REG_HBM0_ECC_OFFSET + channel * sizeof(uint32_t);
@@ -718,11 +739,12 @@ uint32_t fw_io_get_total_uecc_err_count(void *bar0) {
 		if (ret) {
 			pr_err("sysfs failed to read ECC HBM%u error from FWIO\n", channel);
 		} else if (ecc_err_count != 0xdeadbeef) {
-			// ue count is in the lowest 16 bits
-			total_uncorrected_ecc_err_count += (ecc_err_count & 0x0000ffff);
+			total_uncorrected_ecc_err_count += uncorrectable_ecc_err_count(api_version, ecc_err_count);
+			total_repairable_ecc_err_count += repairable_ecc_err_count(api_version, ecc_err_count);
 		}
 	}
-	return total_uncorrected_ecc_err_count;
+	*ue_ecc_count = total_uncorrected_ecc_err_count;
+	*repairable_ecc_count = total_repairable_ecc_err_count;
 }
 
 int fw_io_set_power_profile(struct fw_io_ctx *ctx, uint32_t profile)
@@ -738,4 +760,28 @@ int fw_io_set_power_profile(struct fw_io_ctx *ctx, uint32_t profile)
 	}
 
 	return fw_io_execute_request_new(ctx, FW_IO_CMD_SET_POWER_PROFILE, (u8 *)&data, sizeof(data), NULL, 0);
+}
+
+int fw_io_enable_throttling_notifications(struct fw_io_ctx *ctx, bool enable)
+{	/*
+	 * Note: 
+	 * This implementation assumes throttling notifications is the only feature.
+	 * Current behavior sets features=0x01 (enable) or features=0x00 (disable all)
+	 * When more features are added, we need to:
+	 * 1. Add a get feature command to read current feature state
+	 * 2. Cache the current features bitmap in fw_io_ctx
+	 * 3. Set/clear individual feature bits
+	 * This will avoid wiping out other enabled features when disabling one feature
+	 */
+	u8 features = 0;
+
+	if (!ctx) {
+		return -EINVAL;
+	}
+
+	if (enable) {
+		features = FW_IO_FEATURE_THROTTLING_NOTIFICATIONS;
+	}
+
+	return fw_io_execute_request_new(ctx, FW_IO_CMD_SET_FEATURE, &features, sizeof(features), NULL, 0);
 }

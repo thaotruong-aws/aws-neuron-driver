@@ -37,6 +37,7 @@ struct nmmap_node {
 	pid_t pid; //pid that map'd this device memory
 	u32 device_index; //device index to which the memory belongs to
 	u64 size; //size of the device memory
+	u64 neuron_pa; // physical address in Neuron address space (only set when mmap'ed host allocated Neuron HBM)
 
 	//call back routine that will be called when this device memory is freed
 	//this will be used by efa or other utilities that are using this memory
@@ -77,9 +78,10 @@ struct neuron_dm_special_mmap_ent {
  * @va: mapped virtual address
  * @pid_t: pid that has this virtual address
  * @size: size of the mapped memory
- * @pa: physical address of the device memory
+ * @pa: physical address of the device memory in host address space
+ * @neuron_pa: physical address in Neuron address space
  */
-void nmmap_create_node(struct neuron_device *nd, void *va, pid_t pid, u64 size, u64 pa);
+void nmmap_create_node(struct neuron_device *nd, void *va, pid_t pid, u64 size, u64 pa, u64 neuron_pa);
 
 /**
  * nmmap_delete_node - Deletes all mmap nodes for the current PID. If external drivers have any free function regsistered
@@ -135,4 +137,15 @@ struct nmmap_node *nmmap_search_va(struct neuron_device *nd, void *va);
  */
 struct mem_chunk *nmmap_get_mc_from_pa(struct neuron_device *nd, phys_addr_t pa);
 
+
+/**
+ * nmmap_get_va_placement() - returns Neuron device and HBM index that VA
+ *  was allocated from
+ *
+ * @va:				virtual address of Neuron memory
+ * @device_index: 	Neuron device the memory was allocated from
+ * @hbm_index:		the index of the HBM the memory was allocated from
+ */
+
+int nmmap_get_va_placement(void *va, int *device_index, int *hbm_index);
 #endif

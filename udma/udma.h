@@ -232,9 +232,8 @@ int udma_q_init(struct udma *udma, u32 qid, struct udma_q_params *q_params);
  *
  * @udma_q:	udma queue data structure
  *
- * Return: 0 on success, a negative error code otherwise.
  */
-int udma_q_pause(struct udma_q *udma_q);
+void udma_q_pause(struct udma_q *udma_q);
 
 /**
  * udma_q_handle_get() -  Return a pointer to a queue date structure.
@@ -317,7 +316,10 @@ static inline u32 udma_available_get(struct udma_q *udma_q)
 	// wraparound feature (h2t only at the moment).
 	// Due to the wraparound logic using bitwise and as mod,
 	// we need to check size is power of 2.
-	BUG_ON(IS_POWER_OF_TWO(udma_q->size) == false);
+	if (IS_POWER_OF_TWO(udma_q->size) == false) {
+		pr_err("Expected UDMA queue size to be power of 2");
+		return 0; // No descriptors can be submitted
+	}
 	u32 tmp = udma_q->next_cdesc_idx -
 		  (udma_q->next_desc_idx + UDMA_MAX_NUM_CDESC_PER_CACHE_LINE);
 	tmp &= udma_q->size_mask;
@@ -337,7 +339,6 @@ static inline union udma_desc *udma_desc_get(struct udma_q *udma_q)
 	union udma_desc *desc;
 	u32 next_desc_idx;
 
-	BUG_ON(udma_q == NULL);
 	/* when setting up the queue caller might pass NULL for
 	   the queue base address.  That means the caller is responsible for
 	   attaching the ring and managing it somehow.  Should not be calling
@@ -357,7 +358,10 @@ static inline union udma_desc *udma_desc_get(struct udma_q *udma_q)
 	// wraparound feature (h2t only at the moment).
 	// Due to the wraparound logic using bitwise and as mod,
 	// we need to check size is power of 2.
-	BUG_ON(IS_POWER_OF_TWO(udma_q->size) == false);
+	if (IS_POWER_OF_TWO(udma_q->size) == false) {
+		pr_err("Expected UDMA queue size to be power of 2");
+		return NULL;
+	}
 	/* if reached end of queue, wrap around */
 	udma_q->next_desc_idx = next_desc_idx & udma_q->size_mask;
 
@@ -378,8 +382,6 @@ static inline u32 udma_ring_id_get(struct udma_q *udma_q)
 {
 	u32 ring_id;
 
-	BUG_ON(udma_q == NULL);
-
 	ring_id = udma_q->desc_ring_id;
 
 	/* calculate the ring id of the next desc */
@@ -395,22 +397,26 @@ static inline u32 udma_ring_id_get(struct udma_q *udma_q)
  * @udma_q: queue handle
  * @num: number of descriptors to add to the queues ring
  */
-void udma_desc_action_add(struct udma_q *udma_q, u32 num);
+int udma_desc_action_add(struct udma_q *udma_q, u32 num);
 
 /**
  * udma_cdesc_ack() - Acknowledge processing completion descriptors
  *
  * @udma_q: udma queue handle
  * @num: number of descriptors to acknowledge
+ *
+ * Return: 0 on success, other values for error
  */
-static inline void udma_cdesc_ack(struct udma_q *udma_q, u32 num)
+static inline int udma_cdesc_ack(struct udma_q *udma_q, u32 num)
 {
-	BUG_ON(udma_q == NULL);
 	// This function will only run on dma queues that use the
 	// wraparound feature (h2t only at the moment).
 	// Due to the wraparound logic using bitwise and as mod,
 	// we need to check size is power of 2.
-	BUG_ON(IS_POWER_OF_TWO(udma_q->size) == false);
+	if (IS_POWER_OF_TWO(udma_q->size) == false) {
+		pr_err("Expected UDMA queue size to be power of 2");
+		return -1;
+	}
 
 	u32 cdesc_idx = udma_q->next_cdesc_idx;
 	u32 next_cdesc_idx = (cdesc_idx + num) & udma_q->size_mask;
@@ -419,6 +425,7 @@ static inline void udma_cdesc_ack(struct udma_q *udma_q, u32 num)
 		cdesc_idx = udma_q->next_cdesc_idx;
 		next_cdesc_idx = (cdesc_idx + num) & udma_q->size_mask;
 	}
+	return 0;
 }
 
 #define UDMA_M2S_MAX_ALLOWED_DESCS_PER_PACKET_V4 128

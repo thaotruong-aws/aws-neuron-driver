@@ -628,6 +628,15 @@ struct neuron_ioctl_metrics_ctrl {
 	__u32 mode;     // [in] modifications to metric behavior (neuron_metrics_mode)
 };
 
+struct neuron_ioctl_throttling_notifications {
+    __u32 enable;   // [in] 1 to enable, 0 to disable
+};
+
+struct neuron_ioctl_get_va_placement {
+	__u64 va;			// [in] virtual address of Neuron memory
+	__s32 device_index;		// [out] Neuron device index (negative if VA does not represent Neuron memory)
+	__s32 hbm_index;		// [out] HBM index
+};
 
 #define NEURON_IOCTL_BASE 'N'
 
@@ -834,7 +843,11 @@ struct neuron_ioctl_metrics_ctrl {
 
 #define NEURON_IOCTL_MEM_BUF_ZEROCOPY64_BATCHES _IOWR(NEURON_IOCTL_BASE, 129, struct neuron_ioctl_mem_buf_copy64zc_batches)
 
+#define NEURON_IOCTL_THROTTLING_NOTIFICATIONS _IOW(NEURON_IOCTL_BASE, 130, struct neuron_ioctl_throttling_notifications)
+
+#define NEURON_IOCTL_GET_VA_PLACEMENT _IOW(NEURON_IOCTL_BASE, 131, struct neuron_ioctl_get_va_placement)
+
 // Note: 133 is taken by NEURON_IOCTL_DMA_QUEUE_INIT_BATCH
-#define NEURON_IOCTL_MAX 130
+#define NEURON_IOCTL_MAX 132
 
 #endif

@@ -900,10 +900,11 @@ static void nsysfsmetric_get_hbm_error_count_v2(struct neuron_device *nd,
                                                  bool repairable,
                                                  uint32_t *err_count)
 {
+	uint32_t repairable_count;
 	if (repairable) {
 		*err_count = 0;
 	} else {
-		*err_count = fw_io_get_total_uecc_err_count(nd->npdev.bar0);
+		fw_io_get_total_ecc_err_counts(nd->npdev.bar0, err_count, &repairable_count);
 	}
 }
 
@@ -1727,7 +1728,8 @@ int ndhal_register_funcs_v2(void) {
 	if (narch_is_qemu()) {
 		ndhal->ndhal_reset.nr_initiate_reset = nr_initiate_reset_v2_qemu;
 		ndhal->ndhal_reset.nr_wait_for_reset_completion = nr_wait_for_reset_completion_v2_qemu;
-		ndhal->ndhal_address_map.dma_eng_per_nd = V2_NC_PER_DEVICE * V2_DMA_ENG_PER_NC;
+		ndhal->ndhal_address_map.seng_dma_eng_per_nd = V2_NC_PER_DEVICE * V2_DMA_ENG_PER_NC;
+		ndhal->ndhal_address_map.h2d_dma_eng_per_nd = V2_NUM_H2D_DMA_PER_DEVICE;
 		ndhal->ndhal_reg_access.reg_read32_array = reg_read32_array_v2_qemu_emu;
 		ndhal->ndhal_pci.apb_bar = 2;
 		ndhal->ndhal_ndma.ndma_get_wait_for_completion_time = ndma_get_wait_for_completion_time_v2_qemu;
@@ -1735,7 +1737,8 @@ int ndhal_register_funcs_v2(void) {
 		ndhal->ndhal_reset.retry_count *= 1000; // wait longer on the emulator
 		ndhal->ndhal_reset.nr_initiate_reset = nr_initiate_reset_v2_emu;
 		ndhal->ndhal_reset.nr_wait_for_reset_completion = nr_wait_for_reset_completion_v2_emu;
-		ndhal->ndhal_address_map.dma_eng_per_nd = nc_per_dev_param * V2_DMA_ENG_PER_NC;
+		ndhal->ndhal_address_map.seng_dma_eng_per_nd = nc_per_dev_param * V2_DMA_ENG_PER_NC;
+		ndhal->ndhal_address_map.h2d_dma_eng_per_nd = nc_per_dev_param;
 		ndhal->ndhal_address_map.nc_per_device = nc_per_dev_param;
 		ndhal->ndhal_address_map.dev_nc_map = dev_nc_map;
 		ndhal->ndhal_reg_access.reg_read32_array = reg_read32_array_v2_qemu_emu;
@@ -1744,7 +1747,8 @@ int ndhal_register_funcs_v2(void) {
 	} else {
 		ndhal->ndhal_reset.nr_initiate_reset = nr_initiate_reset_v2;
 		ndhal->ndhal_reset.nr_wait_for_reset_completion = nr_wait_for_reset_completion_v2;
-		ndhal->ndhal_address_map.dma_eng_per_nd = V2_NC_PER_DEVICE * V2_DMA_ENG_PER_NC;
+		ndhal->ndhal_address_map.seng_dma_eng_per_nd = V2_NC_PER_DEVICE * V2_DMA_ENG_PER_NC;
+		ndhal->ndhal_address_map.h2d_dma_eng_per_nd = V2_NUM_H2D_DMA_PER_DEVICE;
 		ndhal->ndhal_reg_access.reg_read32_array = reg_read32_array_v2;
 		ndhal->ndhal_pci.apb_bar = 0;
 	}

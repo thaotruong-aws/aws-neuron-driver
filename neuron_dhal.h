@@ -50,7 +50,8 @@ struct ndhal_address_map {
 	uint64_t event_count;
 	uint32_t ts_per_device;
 	int dma_eng_per_nc;
-	int dma_eng_per_nd;
+	int seng_dma_eng_per_nd;
+    int h2d_dma_eng_per_nd;
 	int dram_channels;
 };
 
@@ -280,4 +281,4 @@ int ndhal_register_funcs_v2(void);
 int ndhal_register_funcs_v3(void);
 int ndhal_register_funcs_v4(void);
 
-#endif
+#endif // #ifndef NEURON_DHAL_H

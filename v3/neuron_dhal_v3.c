@@ -897,7 +897,7 @@ const int trn2_32xl_neigbor_ids[16][4] = {
  */
 static int fw_io_topology_v3(struct fw_io_ctx *ctx, int pdev_index, int device_id, u32 *connected_device_ids, int *count)
 {
-	// V3 does not have Pacific support to detect east/west/south/north neighbors,
+	// V3 does not have firmware support to detect east/west/south/north neighbors,
 	// so its topology is hardcoded based on instance type.
 	*count = 0;
 
@@ -1099,6 +1099,7 @@ static void nsysfsmetric_get_hbm_error_count_v3(struct neuron_device *nd,
 {
 	int ret;
 	uint32_t total_uncorrected_ecc_err_count;
+	uint32_t total_repairable_ecc_err_count;
 	uint32_t ecc_repair_state;
 
 	*err_count = 0;
@@ -1108,7 +1109,7 @@ static void nsysfsmetric_get_hbm_error_count_v3(struct neuron_device *nd,
 		pr_err("sysfs failed to read HBM ECC repair state from FWIO\n");
 		return;
 	}
-	total_uncorrected_ecc_err_count = fw_io_get_total_uecc_err_count(nd->npdev.bar0);
+	fw_io_get_total_ecc_err_counts(nd->npdev.bar0, &total_uncorrected_ecc_err_count, &total_repairable_ecc_err_count);
 
 	/*
 	*  HBM Repair State Bitfield notes:
@@ -1118,20 +1119,27 @@ static void nsysfsmetric_get_hbm_error_count_v3(struct neuron_device *nd,
 	*      0x2 means repair failure
 	*/
 	if (total_uncorrected_ecc_err_count == 0 && ecc_repair_state != 0) {
-		// For legacy Pacific firmware, there might be the case that (err count > 0 && repair state == 0), so allow this case
+		// For legacy firmware, there might be the case that (err count > 0 && repair state == 0), so allow this case
 		// When err count = 0, repair state must be 0x0
 		pr_warn_once("[ND %d] Total Uncorrected ecc err count is %d, but repair state is %d which is invalid. Please contact Neuron for support.\n", nd->device_index, total_uncorrected_ecc_err_count, ecc_repair_state);
 		return;
 	}
-	if (repairable) {
-		*err_count = (ecc_repair_state == 0x1) ? total_uncorrected_ecc_err_count : 0;
-	} else {
-		*err_count = (ecc_repair_state == 0x2) ? total_uncorrected_ecc_err_count : 0;
-		if (ecc_repair_state == 0x0) {
-			// legacy FW hack - TODO remove at some point
-			*err_count = total_uncorrected_ecc_err_count;
-		}
+
+	// We did not complete the repair for some reason, in this case we expect that the error count is non-zero since the repairs have
+	// not gone through yet. If it is zero notify the user since this is unexpected.
+	if (ecc_repair_state == 0x1 && total_repairable_ecc_err_count == 0) {
+		pr_warn_once("[ND %d] HBM repairs were not completed, but no repairable ecc errors were reported, which is invalid. Please contact Neuron for support.\n", nd->device_index);
+		return;
+	} 
+
+	// We failed to repair ECC memory but have not encountered a UECC yet. Proactively notify the user of this since the ECC 
+	// will be more susceptible to errors in the future.
+	if (ecc_repair_state == 0x2 && total_uncorrected_ecc_err_count == 0) {
+		pr_warn_once("[ND %d] HBM repair failed. No uncorrectable ecc errors detected, however memory will be more suseptible to corruption. Please contact Neuron for support.\n", nd->device_index);
+		return;
 	}
+
+	*err_count = (repairable) ? total_repairable_ecc_err_count : total_uncorrected_ecc_err_count;
 }
 
 /**
@@ -1346,7 +1354,7 @@ static u32 neuron_pci_routing_id_to_user_id(u32 routing_id)
 }
 
 /**
- * neuron_pci_get_device_id() - get device id from pacific and set nd->device_index
+ * neuron_pci_get_device_id() - get device id and set nd->device_index
  *
  * @param dev: PCI device
  * @param nd: neuron device
@@ -2171,18 +2179,20 @@ int ndhal_register_funcs_v3(void) {
 		ndhal->ndhal_reset.retry_count *= 1000; // wait longer on qemu
 		ndhal->ndhal_reset.nr_initiate_reset = nr_initiate_reset_v3_qemu;
 		ndhal->ndhal_reset.nr_wait_for_reset_completion = nr_wait_for_reset_completion_v3_qemu;
-		ndhal->ndhal_address_map.dma_eng_per_nd = V3_NC_PER_DEVICE * V3_DMA_ENG_PER_NC;
+		ndhal->ndhal_address_map.seng_dma_eng_per_nd = V3_NC_PER_DEVICE * V3_DMA_ENG_PER_NC;
+		ndhal->ndhal_address_map.h2d_dma_eng_per_nd = V3_NUM_H2D_DMA_PER_DEVICE;
 		ndhal->ndhal_reg_access.reg_read32_array = reg_read32_array_v3_qemu_emu;
 		ndhal->ndhal_ndma.ndma_get_wait_for_completion_time = ndma_get_wait_for_completion_time_v3_qemu;
 		ndhal->ndhal_address_map.dice_per_device = 1;
 
-		// Disable metrics on inkling
+		// Disable metrics on qemu
 		nmetric_log_posts = 0;
 	} else if (narch_is_emu()) {
 		ndhal->ndhal_reset.retry_count *= 1000; // wait longer on the emulator
 		ndhal->ndhal_reset.nr_initiate_reset = nr_initiate_reset_v3_emu;
 		ndhal->ndhal_reset.nr_wait_for_reset_completion = nr_wait_for_reset_completion_v3_emu;
-		ndhal->ndhal_address_map.dma_eng_per_nd = nc_per_dev_param * V3_DMA_ENG_PER_NC;
+		ndhal->ndhal_address_map.seng_dma_eng_per_nd = nc_per_dev_param * V3_DMA_ENG_PER_NC;
+		ndhal->ndhal_address_map.h2d_dma_eng_per_nd = nc_per_dev_param;
 		ndhal->ndhal_address_map.nc_per_device = nc_per_dev_param;
 		ndhal->ndhal_address_map.dev_nc_map = dev_nc_map;
 		ndhal->ndhal_reg_access.reg_read32_array = reg_read32_array_v3_qemu_emu;
@@ -2194,7 +2204,8 @@ int ndhal_register_funcs_v3(void) {
 	} else {
 		ndhal->ndhal_reset.nr_initiate_reset = nr_initiate_reset_v3;
 		ndhal->ndhal_reset.nr_wait_for_reset_completion = nr_wait_for_reset_completion_v3;
-		ndhal->ndhal_address_map.dma_eng_per_nd = V3_NC_PER_DEVICE * V3_DMA_ENG_PER_NC;
+		ndhal->ndhal_address_map.seng_dma_eng_per_nd = V3_NC_PER_DEVICE * V3_DMA_ENG_PER_NC;
+		ndhal->ndhal_address_map.h2d_dma_eng_per_nd = V3_NUM_H2D_DMA_PER_DEVICE;
 		ndhal->ndhal_reg_access.reg_read32_array = reg_read32_array_v3;
 	}
 

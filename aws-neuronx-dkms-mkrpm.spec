@@ -69,6 +69,15 @@ exit 1
 %preun
 echo -e
 echo -e "Uninstall of %{module_name} module (version %{version}) beginning:"
+# Check if module is loaded before attempting removal
+if lsmod | grep -q "^neuron "; then
+    echo "Neuron module is currently loaded. Attempting to unload..."
+    if ! rmmod neuron 2>/dev/null; then
+        echo "ERROR: Cannot unload neuron module - it is currently in use."
+        echo "Please stop all processes using the neuron module before uninstalling."
+        exit 1
+    fi
+fi
 dkms remove -m %{module_name} -v %{version} --all --rpm_safe_upgrade
 exit 0
 
