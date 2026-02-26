@@ -224,10 +224,16 @@ int mc_dump_all_chunks(struct neuron_device *nd, u32 channel, u32 num_entries_in
 
 static inline bool mc_access_is_within_bounds(const struct mem_chunk *mc, u64 access_offset, u64 access_size)
 {
+	u64 allowed_range = 0;
 	if (mc->alloc_type == NEURON_MEMALLOC_TYPE_CONTIGUOUS_SCRATCHPAD_DEVICE) {
-		return (mc->pa + access_offset + access_size <= mc->mp->main_pool_end_addr);
+		allowed_range = mc->mp->main_pool_end_addr - mc->pa;
+	} else {
+		allowed_range = mc->size;
 	}
-	return access_offset + access_size <= mc->size;
+
+	// Do NOT refactor to access_offset + access_size <= allowed_range, as the addition
+	// can overflow and wraparound to be less than allowed_range
+	return (access_size <= allowed_range && access_offset <= allowed_range - access_size);
 }
 
 #endif

@@ -1203,13 +1203,6 @@ int npe_election_exec_on_rst(struct neuron_device *nd, bool reset_successful)
 		}
 	}
 
-	// spoof PDS topology/election data
-	//
-	if (ndhal->ndhal_arch.platform_type == NEURON_PLATFORM_TYPE_PDS) {
-		npe_pds_spoof();
-		goto done;
-	}
-	
 	// if we aren't kicking off election on first driver reset (testing) or 
 	// if we aren't in init state then we've already made an election decision.
 	//
@@ -1221,6 +1214,13 @@ int npe_election_exec_on_rst(struct neuron_device *nd, bool reset_successful)
 	//
 	if (!npe_all_rst_complete()) {
 			goto done;
+	}
+	
+	// spoof PDS topology/election data
+	//
+	if (ndhal->ndhal_arch.platform_type == NEURON_PLATFORM_TYPE_PDS) {
+		npe_pds_spoof();
+		goto done;
 	}
 	
 	npe_initiate_election(ndhal_pelect_data.nbr_data_read_timeout);
@@ -1801,6 +1801,35 @@ ssize_t npe_class_ultraserver_mode_show_data(char *buf)
 	return dhal_sysfs_emit(buf, "%s\n", output);
 }
 
+/*
+ * Temporary hard-coded mapping table for server_id assignment.
+ *   If we find device0's serial number in the table, this is
+ *   part of a PDS server  
+ *
+ */
+struct { 
+	uint64_t d0_serial_number; // serial number of a particular device 0 on a particular server
+	uint64_t server_num;       // server unique id of the associated server
+	uint32_t node_id;          // (rack id<<1 | server id)
+} npe_pds_tmp_mapping_tbl[] =  {
+	{0x644b8499cd7bf298ull, 0x0000004005590701ull, 0},
+	{0x001e8649a094af56ull, 0x0000004005590701ull, 1},
+	{0x4b63b0678ae2a930ull, 0x0000004005590701ull, 2},
+	{0x7242db0306415ed7ull, 0x0000004005590701ull, 3},
+	{0x7e3a518befdf7a57ull, 0x0000004005590689ull, 0},
+	{0x3c604484897a4f1aull, 0x0000004005590689ull, 1},
+	{0xacfba8515bb626a6ull, 0x0000004005590689ull, 2},
+	{0x48c2b73699e97cadull, 0x0000004005590689ull, 3},
+	{0xa952ff53b45fc298ull, 0x0000004005590680ull, 0},
+	{0x5961a8d75d827fc0ull, 0x0000004005590680ull, 1},
+	{0x714cf1792facf83bull, 0x0000004005590680ull, 2},
+	{0x9b3187e1756c8a7full, 0x0000004005590680ull, 3},
+	{0x85059f2db248f3dfull, 0x0000004005590682ull, 0},
+	{0xf4d2ef81ad1b1264ull, 0x0000004005590682ull, 1},
+	{0x3d3ea5a61b768cbdull, 0x0000004005590682ull, 2},
+	{0x85752a544054033aull, 0x0000004005590682ull, 3}
+}; 
+
 /* npe_pds_spoof(void)
  *
  *   temp spoof of PDS platform data
@@ -1809,12 +1838,42 @@ ssize_t npe_class_ultraserver_mode_show_data(char *buf)
 static void npe_pds_spoof(void)
 {
 	static bool initialized = false;
+	int ret;
+	int i;
+	struct neuron_device *nd;
+	uint64_t serial_number;
+
 	pr_info("spoofing pds data");
 	
 	if (initialized) {
 		return;
 	}
 
+	// first check the mapping table to see if there's a match for preview server
+	//
+	nd = ndhal_pelect_data.pnd[0];
+	if (nd == NULL) {
+		pr_err("internal error.  Neuron device pointer should not be null at start of election");
+		return;
+	}
+
+	ret = fw_io_serial_number_read(nd->npdev.bar0, &serial_number);
+	if (ret) {
+		pr_err("nd%02d: local serial number read failed", nd->device_index);
+		return;
+	}
+
+	for (i = 0; i < sizeof(npe_pds_tmp_mapping_tbl) / sizeof(*npe_pds_tmp_mapping_tbl); i++) {
+		if (serial_number == npe_pds_tmp_mapping_tbl[i].d0_serial_number) {
+			ndhal_pelect_data.node_cnt = 4;
+			ndhal_pelect_data.node_id = npe_pds_tmp_mapping_tbl[i].node_id;
+			ndhal_pelect_data.pod_serial_num = npe_pds_tmp_mapping_tbl[i].server_num;
+			goto done;
+		}
+	}
+
+	// otherwise, we use temporary parameter overrides  
+	//
 	ndhal_pelect_data.node_cnt = userver_pds_node_cnt;
 
 	if (ndhal_pelect_data.node_cnt == 0) {
@@ -1832,6 +1891,8 @@ static void npe_pds_spoof(void)
 	}
 
 	ndhal_pelect_data.pod_serial_num = userver_pds_server_id;
+
+done:
 	ndhal_pelect_data.pod_state_internal = NEURON_NPE_POD_ST_ELECTION_SUCCESS;
 	
 	initialized = true;

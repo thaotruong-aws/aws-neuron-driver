@@ -26,6 +26,10 @@ int dev_nc_map = 1;
 module_param(dev_nc_map, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 MODULE_PARM_DESC(dev_nc_map, "Map of active neuron cores");
 
+int dma_teardown_on_exit = 1;
+module_param(dma_teardown_on_exit, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+MODULE_PARM_DESC(dma_teardown_on_exit, "Reset the DMA state on user process exit");
+
 // forward
 static void ndmar_h2t_ring_free(struct ndma_ring *ring);
 
@@ -208,9 +212,14 @@ void ndmar_handle_process_exit(struct neuron_device *nd, pid_t pid)
 {
 	int ret, eng_id, qid;
 
+	// Skip resetting the DMAs on user process exit if module param is disabled
+	if (dma_teardown_on_exit == 0) {
+		return;
+	}
+
 	struct mem_chunk *mc = nd->ndma_q_dummy_mc;
 	const int desc_count = NDMA_QUEUE_DUMMY_RING_DESC_COUNT;
-	for (eng_id = 0; eng_id < ndhal->ndhal_address_map.dma_eng_per_nd; eng_id++) {
+	for (eng_id = 0; eng_id < ndhal->ndhal_address_map.seng_dma_eng_per_nd; eng_id++) {
 		for (qid = 0; qid < DMA_MAX_Q_MAX; qid++) {
 			struct ndma_eng *eng = ndmar_acquire_engine_nl(nd, eng_id);
 			struct ndma_queue *queue;
@@ -283,8 +292,14 @@ int ndmar_ack_completed(struct neuron_device *nd, u32 eng_id, u32 qid, u32 count
 		goto done;
 	}
 
-	udma_cdesc_ack(rxq, count);
-	udma_cdesc_ack(txq, count);
+	ret = udma_cdesc_ack(rxq, count);
+	if (ret) {
+		goto done;
+	}
+	ret = udma_cdesc_ack(txq, count);
+	if (ret) {
+		goto done;
+	}
 
 done:
 	ndmar_release_engine(eng);

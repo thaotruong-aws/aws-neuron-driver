@@ -114,9 +114,10 @@ static int nr_reset_thread_fn(void *arg)
 
 		ret = ndhal->ndhal_reset.nr_initiate_reset(nd, nc_map);
 		if (ret) {
+			char *reason = (ret == -EINTR) ? "interrupted by driver unload\n" : "failed\n";
 			nr_call_post_reset_config(nd, nc_map, false);
 			ITER_COAL_REQS(request_iter, first_request, last_request,
-				pr_info("nd%d: reset request %u failed\n", nd->device_index, request_iter->request_id);)
+				pr_info("nd%d: reset request %u %s\n", nd->device_index, request_iter->request_id, reason);)
 			state = NEURON_RESET_STATE_FAILED;
 			nsysfsmetric_inc_reset_fail_count(nd);
 		} else {
@@ -399,7 +400,7 @@ int nr_initiate_reset_via_fw(struct neuron_device *nd, uint32_t nc_map, uint32_t
 		 * the device completes the reset. Wait before next polling cycle.
 		 */
 		if (nr_msleep_stoppable(nd, ndhal->ndhal_reset.reset_poll_interval)) {
-			return -1;
+			return -EINTR;
 		}
 
 		/* Poll to check if firmware has acknowledged the reset request */
@@ -409,7 +410,7 @@ int nr_initiate_reset_via_fw(struct neuron_device *nd, uint32_t nc_map, uint32_t
 			if (reset_time > 0) {
 				nmetric_set_reset_time_metrics(nd, reset_time, is_device_reset);
 			} else {
-				return -1;
+				pr_warn_once("unexpected reset time value of %lldms", reset_time);
 			}
 			return 0;
 		}
@@ -428,5 +429,5 @@ int nr_initiate_reset_via_fw(struct neuron_device *nd, uint32_t nc_map, uint32_t
 
 	/* Timeout reached - reset failed */
 	nmetric_increment_reset_failure_count(nd, is_device_reset); // Record the reset failure in metrics
-	return -1;
+	return -ETIMEDOUT;
 }

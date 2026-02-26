@@ -233,7 +233,9 @@ static int udma_q_set_pointers(struct udma_q *udma_q)
 {
 	/* reset the descriptors ring pointers */
 
-	BUG_ON((ADDR_LOW(udma_q->desc_phy_base) & ~UDMA_M2S_Q_TDRBP_LOW_ADDR_MASK));
+	if((ADDR_LOW(udma_q->desc_phy_base) & ~UDMA_M2S_Q_TDRBP_LOW_ADDR_MASK)) {
+		return -1;
+	}
 	reg_write32(&udma_q->q_regs->rings.drbp_low, ADDR_LOW(udma_q->desc_phy_base));
 	reg_write32(&udma_q->q_regs->rings.drbp_high, ADDR_HIGH(udma_q->desc_phy_base));
 
@@ -245,7 +247,9 @@ static int udma_q_set_pointers(struct udma_q *udma_q)
 	} else {
 		/* reset the completion descriptors ring pointers */
 		/* assert completion base address aligned. */
-		BUG_ON((ADDR_LOW(udma_q->cdesc_phy_base) & ~UDMA_M2S_Q_TCRBP_LOW_ADDR_MASK));
+		if ((ADDR_LOW(udma_q->cdesc_phy_base) & ~UDMA_M2S_Q_TCRBP_LOW_ADDR_MASK)) {
+			return -1;
+		}
 		reg_write32(&udma_q->q_regs->rings.crbp_low, ADDR_LOW(udma_q->cdesc_phy_base));
 		reg_write32(&udma_q->q_regs->rings.crbp_high, ADDR_HIGH(udma_q->cdesc_phy_base));
 	}
@@ -258,8 +262,6 @@ static int udma_q_set_pointers(struct udma_q *udma_q)
 static void udma_q_enable(struct udma_q *udma_q, int enable)
 {
 	u32 reg;
-
-	BUG_ON(udma_q == NULL);
 
 	reg = udma_q->cfg;
 	if (enable) {
@@ -278,7 +280,6 @@ static void udma_q_enable(struct udma_q *udma_q, int enable)
 static int udma_handle_init_aux(struct udma *udma, struct udma_params *udma_params)
 {
 	int i;
-
 	/* note, V1 hardware uses DMA rev4, no need to support other version */
 	udma->rev_id = UDMA_REV_ID_4;
 	udma->num_of_queues_max = DMA_MAX_Q_V4;
@@ -336,9 +337,6 @@ int udma_init(struct udma *udma, struct udma_params *udma_params)
 	int ret;
 	u32 val;
 
-	BUG_ON(udma == NULL);
-	BUG_ON(udma_params == NULL);
-
 	ret = udma_handle_init_aux(udma, udma_params);
 	if (ret)
 		return ret;
@@ -371,8 +369,9 @@ static int udma_q_init_validate(struct udma *udma, u32 qid, struct udma_q_params
 {
 	struct udma_q *udma_q;
 
-	BUG_ON(udma == NULL);
-	BUG_ON(q_params == NULL);
+	if (udma == NULL || q_params == NULL) {
+		return -EINVAL;
+	}
 
 	if (qid >= udma->num_of_queues) {
 		pr_err("invalid queue id (%d)\n", qid);
@@ -405,10 +404,9 @@ static int udma_q_init_validate(struct udma *udma, u32 qid, struct udma_q_params
 	return 0;
 }
 
-int udma_q_pause(struct udma_q *udma_q)
+void udma_q_pause(struct udma_q *udma_q)
 {
 	udma_q_enable(udma_q, 0);
-	return 0;
 }
 
 /*
@@ -418,7 +416,9 @@ static int udma_q_reset(struct udma_q *udma_q)
 {
 	u32 __iomem *q_sw_ctrl_reg;
 
-	BUG_ON(udma_q->cdesc_size != 0);
+	if (udma_q->cdesc_size != 0) {
+		return -1;
+	}
 
 	udma_q_pause(udma_q);
 
@@ -435,10 +435,10 @@ static int udma_q_reset(struct udma_q *udma_q)
 
 /** Initializes the udma queue data structure.
  */
-static void udma_q_init_internal(struct udma *udma, u32 qid, struct udma_q_params *q_params)
+static int udma_q_init_internal(struct udma *udma, u32 qid, struct udma_q_params *q_params)
 {
 	struct udma_q *udma_q;
-
+	int ret = 0;
 	udma_q = (q_params->type == UDMA_TX) ? &udma->udma_q_m2s[qid] : &udma->udma_q_s2m[qid];
 	udma_q->type = q_params->type;
 	udma_q->adapter_rev_id = q_params->adapter_rev_id;
@@ -481,12 +481,20 @@ static void udma_q_init_internal(struct udma *udma, u32 qid, struct udma_q_param
 
 
 	/* clear all queue ptrs */
-	udma_q_reset(udma_q);
+	ret = udma_q_reset(udma_q);
+	if (ret) {
+		return ret;
+	}
 
 	/* reset the queue pointers */
-	udma_q_set_pointers(udma_q);
+	ret = udma_q_set_pointers(udma_q);
+	if (ret) {
+		return ret;
+	}
 
 	udma_q_enable(udma_q, 1);
+
+	return ret;
 }
 
 /** Validates and Initializes the udma queue data structure and hardware.
@@ -498,7 +506,9 @@ int udma_q_init(struct udma *udma, u32 qid, struct udma_q_params *q_params)
 	ret = udma_q_init_validate(udma, qid, q_params);
 	if (ret)
 		return ret;
-	udma_q_init_internal(udma, qid, q_params);
+	ret = udma_q_init_internal(udma, qid, q_params);
+	if (ret)
+		return ret;
 
 	return 0;
 }
@@ -548,8 +558,6 @@ int udma_state_set(struct udma *udma, enum udma_state state)
 {
 	u32 reg;
 
-	BUG_ON(udma == NULL);
-
 	reg = 0;
 	switch (state) {
 	case UDMA_DISABLE:
@@ -588,8 +596,6 @@ static bool udma_s2m_stream_status_get(struct udma *udma)
 	bool queue_stream_status;
 	bool queue_stream_status_valid = false;
 	bool stream_status = true;
-
-	BUG_ON(udma == NULL);
 
 	reg_read32(&udma->udma_regs_s2m->s2m.stream_cfg, &stream_cfg);
 	stream_cfg &= UDMA_S2M_STREAM_FLUSH;
@@ -691,14 +697,16 @@ enum udma_state udma_state_get(struct udma *udma, enum udma_type type)
 }
 
 /* Increment tail pointer of a DMA queue, that starts data transfer by the queue */
-void udma_desc_action_add(struct udma_q *udma_q, u32 num)
+int udma_desc_action_add(struct udma_q *udma_q, u32 num)
 {
 	u32 __iomem *addr;
 
-	BUG_ON(udma_q == NULL);
-	BUG_ON((num == 0) || (num > udma_q->size));
+	if ((num == 0) || (num > udma_q->size)) {
+		return -1;
+	}
 
 	addr = &udma_q->q_regs->rings.drtp_inc;
 	mb(); // to make sure data written to the descriptors will be visible to the DMA
 	reg_write32(addr, num);
+	return 0;
 }

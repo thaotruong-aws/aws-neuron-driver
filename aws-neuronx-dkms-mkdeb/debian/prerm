@@ -8,6 +8,15 @@ set -e
 case "$1" in
     remove|upgrade|deconfigure)
       if [  "`dkms status -m $NAME`" ]; then
+         # Check if module is loaded before attempting removal
+         if lsmod | grep -q "^neuron "; then
+             echo "Neuron module is currently loaded. Attempting to unload..."
+             if ! rmmod neuron 2>/dev/null; then
+                 echo "ERROR: Cannot unload neuron module - it is currently in use." >&2
+                 echo "Please stop all processes using the neuron module before uninstalling." >&2
+                 exit 1
+             fi
+         fi
          dkms remove -m $NAME -v $VERSION --all
       fi
     ;;

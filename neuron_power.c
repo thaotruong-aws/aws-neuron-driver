@@ -58,7 +58,7 @@ bool npower_enabled_in_fw(struct neuron_device *nd)
 	}
 
 	// Just read the API version from firmware.  We could try to be smart here and cache
-	// this, but we need to protect ourselves from rollbacks in the Pacific version or
+	// this, but we need to protect ourselves from rollbacks in the firmware version or
 	// other changes.  Plus, this is just a simple MMIO read, so it's cheap.
 	ret = fw_io_api_version_read(nd->npdev.bar0, &api_version_num);
 	if (ret != 0) {

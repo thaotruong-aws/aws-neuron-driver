@@ -151,6 +151,7 @@ static int ndhal_register_funcs_trn3(void) {
  */
 #define NEURON_TRN3PDS_INSTANCE_NAME "trn3s.48xlarge"
 #define NEURON_TRN3PDS0_INSTANCE_NAME "trn3-dev0.48xlarge"
+#define NEURON_TRN3P_INSTANCE_NAME "trn3p.48xlarge"
 
 static enum neuron_platform_type ndhal_platform_type_v4(void)
 {
@@ -162,6 +163,8 @@ static enum neuron_platform_type ndhal_platform_type_v4(void)
 		platform_type = NEURON_PLATFORM_TYPE_PDS;
 	} else if ((strncmp(buf, NEURON_TRN3PDS0_INSTANCE_NAME, sizeof(NEURON_TRN3PDS_INSTANCE_NAME)-1) == 0)) {
 		platform_type = NEURON_PLATFORM_TYPE_PDS;
+	} else if ((strncmp(buf, NEURON_TRN3P_INSTANCE_NAME, sizeof(NEURON_TRN3P_INSTANCE_NAME)-1) == 0)) {
+		platform_type = NEURON_PLATFORM_TYPE_ULTRASERVER;
 	} else {
 		platform_type = NEURON_PLATFORM_TYPE_STD;
 	}
@@ -336,7 +339,7 @@ static u32 neuron_pci_routing_id_to_user_id(u32 routing_id)
 }
 
 /**
- * neuron_pci_get_device_id() - get device id from pacific and set nd->device_index
+ * neuron_pci_get_device_id() - get device id and set nd->device_index
  *
  * @param dev: PCI device
  * @param nd: neuron device
@@ -409,6 +412,51 @@ static int neuron_pci_get_device_id_v4(struct neuron_device *nd, struct pci_dev 
 	return 0;
 }
 
+#define NC_MAPPING_MAX_CORE_COUNT_V4 128
+static const struct neuron_ioctl_nc_map_entry nc_mapping_v0_seng_swap_pds[] = {
+	{ .device_id = 0,  .device_nc_idx = 4 }, { .device_id = 0,  .device_nc_idx = 5 }, { .device_id = 0,  .device_nc_idx = 6 }, { .device_id = 0,  .device_nc_idx = 7 }, { .device_id = 0,  .device_nc_idx = 2 }, { .device_id = 0,  .device_nc_idx = 3  }, { .device_id = 0,  .device_nc_idx = 0 }, { .device_id = 0,  .device_nc_idx = 1 }, // ND0
+	{ .device_id = 1,  .device_nc_idx = 2 }, { .device_id = 1,  .device_nc_idx = 3 }, { .device_id = 1,  .device_nc_idx = 0 }, { .device_id = 1,  .device_nc_idx = 1 }, { .device_id = 1,  .device_nc_idx = 4 }, { .device_id = 1,  .device_nc_idx = 5  }, { .device_id = 1,  .device_nc_idx = 6 }, { .device_id = 1,  .device_nc_idx = 7 }, // ND1
+	{ .device_id = 2,  .device_nc_idx = 4 }, { .device_id = 2,  .device_nc_idx = 5 }, { .device_id = 2,  .device_nc_idx = 6 }, { .device_id = 2,  .device_nc_idx = 7 }, { .device_id = 2,  .device_nc_idx = 2 }, { .device_id = 2,  .device_nc_idx = 3  }, { .device_id = 2,  .device_nc_idx = 0 }, { .device_id = 2,  .device_nc_idx = 1 }, // ND2
+	{ .device_id = 3,  .device_nc_idx = 2 }, { .device_id = 3,  .device_nc_idx = 3 }, { .device_id = 3,  .device_nc_idx = 0 }, { .device_id = 3,  .device_nc_idx = 1 }, { .device_id = 3,  .device_nc_idx = 4 }, { .device_id = 3,  .device_nc_idx = 5  }, { .device_id = 3,  .device_nc_idx = 6 }, { .device_id = 3,  .device_nc_idx = 7 }, // ND3
+	{ .device_id = 4,  .device_nc_idx = 4 }, { .device_id = 4,  .device_nc_idx = 5 }, { .device_id = 4,  .device_nc_idx = 6 }, { .device_id = 4,  .device_nc_idx = 7 }, { .device_id = 4,  .device_nc_idx = 2 }, { .device_id = 4,  .device_nc_idx = 3  }, { .device_id = 4,  .device_nc_idx = 0 }, { .device_id = 4,  .device_nc_idx = 1 }, // ND4
+	{ .device_id = 5,  .device_nc_idx = 2 }, { .device_id = 5,  .device_nc_idx = 3 }, { .device_id = 5,  .device_nc_idx = 0 }, { .device_id = 5,  .device_nc_idx = 1 }, { .device_id = 5,  .device_nc_idx = 4 }, { .device_id = 5,  .device_nc_idx = 5  }, { .device_id = 5,  .device_nc_idx = 6 }, { .device_id = 5,  .device_nc_idx = 7 }, // ND5
+	{ .device_id = 6,  .device_nc_idx = 4 }, { .device_id = 6,  .device_nc_idx = 5 }, { .device_id = 6,  .device_nc_idx = 6 }, { .device_id = 6,  .device_nc_idx = 7 }, { .device_id = 6,  .device_nc_idx = 2 }, { .device_id = 6,  .device_nc_idx = 3  }, { .device_id = 6,  .device_nc_idx = 0 }, { .device_id = 6,  .device_nc_idx = 1 }, // ND6
+	{ .device_id = 7,  .device_nc_idx = 2 }, { .device_id = 7,  .device_nc_idx = 3 }, { .device_id = 7,  .device_nc_idx = 0 }, { .device_id = 7,  .device_nc_idx = 1 }, { .device_id = 7,  .device_nc_idx = 4 }, { .device_id = 7,  .device_nc_idx = 5  }, { .device_id = 7,  .device_nc_idx = 6 }, { .device_id = 7,  .device_nc_idx = 7 }, // ND7
+	{ .device_id = 8,  .device_nc_idx = 4 }, { .device_id = 8,  .device_nc_idx = 5 }, { .device_id = 8,  .device_nc_idx = 6 }, { .device_id = 8,  .device_nc_idx = 7 }, { .device_id = 8,  .device_nc_idx = 2 }, { .device_id = 8,  .device_nc_idx = 3  }, { .device_id = 8,  .device_nc_idx = 0 }, { .device_id = 8,  .device_nc_idx = 1 }, // ND8
+	{ .device_id = 9,  .device_nc_idx = 2 }, { .device_id = 9,  .device_nc_idx = 3 }, { .device_id = 9,  .device_nc_idx = 0 }, { .device_id = 9,  .device_nc_idx = 1 }, { .device_id = 9,  .device_nc_idx = 4 }, { .device_id = 9,  .device_nc_idx = 5  }, { .device_id = 9,  .device_nc_idx = 6 }, { .device_id = 9,  .device_nc_idx = 7 }, // ND9
+	{ .device_id = 10, .device_nc_idx = 4 }, { .device_id = 10, .device_nc_idx = 5 }, { .device_id = 10, .device_nc_idx = 6 }, { .device_id = 10, .device_nc_idx = 7 }, { .device_id = 10, .device_nc_idx = 2 }, { .device_id = 10, .device_nc_idx = 3  }, { .device_id = 10, .device_nc_idx = 0 }, { .device_id = 10, .device_nc_idx = 1 }, // ND10
+	{ .device_id = 11, .device_nc_idx = 2 }, { .device_id = 11, .device_nc_idx = 3 }, { .device_id = 11, .device_nc_idx = 0 }, { .device_id = 11, .device_nc_idx = 1 }, { .device_id = 11, .device_nc_idx = 4 }, { .device_id = 11, .device_nc_idx = 5  }, { .device_id = 11, .device_nc_idx = 6 }, { .device_id = 11, .device_nc_idx = 7 }, // ND11
+	{ .device_id = 12, .device_nc_idx = 4 }, { .device_id = 12, .device_nc_idx = 5 }, { .device_id = 12, .device_nc_idx = 6 }, { .device_id = 12, .device_nc_idx = 7 }, { .device_id = 12, .device_nc_idx = 2 }, { .device_id = 12, .device_nc_idx = 3  }, { .device_id = 12, .device_nc_idx = 0 }, { .device_id = 12, .device_nc_idx = 1 }, // ND12
+	{ .device_id = 13, .device_nc_idx = 2 }, { .device_id = 13, .device_nc_idx = 3 }, { .device_id = 13, .device_nc_idx = 0 }, { .device_id = 13, .device_nc_idx = 1 }, { .device_id = 13, .device_nc_idx = 4 }, { .device_id = 13, .device_nc_idx = 5  }, { .device_id = 13, .device_nc_idx = 6 }, { .device_id = 13, .device_nc_idx = 7 }, // ND13
+	{ .device_id = 14, .device_nc_idx = 4 }, { .device_id = 14, .device_nc_idx = 5 }, { .device_id = 14, .device_nc_idx = 6 }, { .device_id = 14, .device_nc_idx = 7 }, { .device_id = 14, .device_nc_idx = 2 }, { .device_id = 14, .device_nc_idx = 3  }, { .device_id = 14, .device_nc_idx = 0 }, { .device_id = 14, .device_nc_idx = 1 }, // ND14
+	{ .device_id = 15, .device_nc_idx = 2 }, { .device_id = 15, .device_nc_idx = 3 }, { .device_id = 15, .device_nc_idx = 0 }, { .device_id = 15, .device_nc_idx = 1 }, { .device_id = 15, .device_nc_idx = 4 }, { .device_id = 15, .device_nc_idx = 5  }, { .device_id = 15, .device_nc_idx = 6 }, { .device_id = 15, .device_nc_idx = 7 }, // ND15
+};
+
+#define NC_MAPPING_V0_SENG_SWAP_SIZE (sizeof(nc_mapping_v0_seng_swap_pds) / sizeof(nc_mapping_v0_seng_swap_pds[0]))
+static_assert((NC_MAPPING_V0_SENG_SWAP_SIZE == NC_MAPPING_MAX_CORE_COUNT_V4) && (NC_MAPPING_V0_SENG_SWAP_SIZE <= NEURON_NC_MAP_MAX_ENTRIES));
+
+static int ncdev_logical_to_physical_nc_map_v4(struct neuron_ioctl_nc_map *map, uint32_t max_num_entries, enum neuron_ioctl_nc_mapping_type version)
+{
+	uint32_t entry_idx;
+	uint32_t entries_to_copy = (max_num_entries < NC_MAPPING_MAX_CORE_COUNT_V4) ? max_num_entries : NC_MAPPING_MAX_CORE_COUNT_V4;
+	const struct neuron_ioctl_nc_map_entry *mapping;
+
+	if (version != NEURON_IOCTL_NC_MAPPING_TYPE_V0) {
+		pr_err("Unsupported Neuron Core Mapping verion %u for v4 arch", version);
+		return -EINVAL;
+	}
+	mapping = nc_mapping_v0_seng_swap_pds;
+
+	for (entry_idx = 0; entry_idx < entries_to_copy; entry_idx++) {
+		uint32_t core_idx = entry_idx;
+		WARN_ONCE(core_idx >= NC_MAPPING_MAX_CORE_COUNT_V4, "core_idx %d > max core count %d", core_idx, NC_MAPPING_MAX_CORE_COUNT_V4);
+		map->mappings[entry_idx] = mapping[core_idx];
+	}
+	map->num_entries = entries_to_copy;
+
+	return 0;
+}
+
 /**
  * ndhal_register_funcs_v4() - initialize the dhal for v4 chips
  *
@@ -432,7 +480,7 @@ int ndhal_register_funcs_v4(void) {
 	ndhal->ndhal_cdev.ncdev_mem_regions = ncdev_mem_regions_v4;
 
 	if (narch_is_emu()) {
-		// Temporarily disable resets on mariana emulation until pacific is ready
+		// Temporarily disable resets on emulation until support is ready
 		extern int no_reset;
 		no_reset = 1;
 	}
@@ -448,6 +496,7 @@ int ndhal_register_funcs_v4(void) {
 		}
 	} else if (ndhal->ndhal_arch.platform_type == NEURON_PLATFORM_TYPE_PDS) {
 		//TODO PDS
+	    ndhal->ndhal_cdev.ncdev_logical_to_physical_nc_map = ncdev_logical_to_physical_nc_map_v4;
 	}	
 
 	switch (ndhal->pci_device_id) {

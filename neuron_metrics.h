@@ -26,7 +26,9 @@
 #define NMETRIC_TYPE_FW_IO_ERR    0x3
 #define NMETRIC_TYPE_BITMAP       0x4
 #define NMETRIC_TYPE_CONSTANT_U64 0x5
-#define NMETRIC_TYPE_DRIVER       0x6
+#define NMETRIC_TYPE_DRIVER_RESET 0x6
+#define NMETRIC_TYPE_DRIVER_USERVER 0x7
+#define NMETRIC_TYPE_UTILIZATION  0x8
 
 #define NMETRIC_FLAG_VERS_ALLOW_TYPE	(1)
 
@@ -73,7 +75,7 @@ struct nmetric_driver_metrics {
 #define NMETRIC_CONSTANTS_COUNT	3
 
 // Number of metrics of type NMETRIC_TYPE_COUNTER + the special case (type NMETRIC_TYPE_FW_IO_ERR)
-#define NMETRIC_COUNTER_COUNT	29
+#define NMETRIC_COUNTER_COUNT	30
 
 // Number of metrics of type NMETRIC_TYPE_BITMAP
 #define NMETRIC_BITMAP_COUNT 1
@@ -97,9 +99,11 @@ typedef struct {
 #define NMETRIC_CONSTANT_DEF(idx, tick, cw_id)               NMETRIC_DEF(idx, NMETRIC_TYPE_CONSTANT, 1, tick, cw_id, 0xFF, 0)
 #define NMETRIC_VERSION_DEF(idx, tick, cw_id, ds_id, flags)  NMETRIC_DEF(idx, NMETRIC_TYPE_VERSION, NEURON_METRICS_VERSION_CAPACITY, tick, cw_id, ds_id, flags)
 #define NMETRIC_COUNTER_DEF(idx, tick, cw_id, ds_id)         NMETRIC_DEF(idx, NMETRIC_TYPE_COUNTER, 1, tick, cw_id, ds_id, 0)
+#define NMETRIC_UTILIZATION_DEF(idx, tick, cw_id, ds_id)     NMETRIC_DEF(idx, NMETRIC_TYPE_UTILIZATION, 1, tick, cw_id, ds_id, 0)
 #define NMETRIC_BITMAP_DEF(idx, tick, cw_id, ds_id)          NMETRIC_DEF(idx, NMETRIC_TYPE_BITMAP, 1, tick, cw_id, ds_id, 0)
 #define NMETRIC_CONSTANT_U64(idx, tick, cw_id, ds_id, flags) NMETRIC_DEF(idx, NMETRIC_TYPE_CONSTANT_U64, 1, tick, cw_id, ds_id, flags)
-#define NMETRIC_DRIVER_DEF(idx, tick, cw_id)                 NMETRIC_DEF(idx, NMETRIC_TYPE_DRIVER, 1, tick, cw_id, 0xFF, 0)
+#define NMETRIC_DRIVER_DEF(idx, tick, cw_id)                 NMETRIC_DEF(idx, NMETRIC_TYPE_DRIVER_RESET, 1, tick, cw_id, 0xFF, 0)
+#define NMETRIC_DRIVER_USERVER_DEF(idx, tick, cw_id)         NMETRIC_DEF(idx, NMETRIC_TYPE_DRIVER_USERVER, 1, tick, cw_id, 0xFF, 0)
 
 struct nmetric_versions {
 	u32 version_usage_count[NEURON_METRICS_VERSION_MAX_CAPACITY];
@@ -117,7 +121,8 @@ struct nmetric_aggregation_thread {
 	struct task_struct *thread; // aggregation thread that sends metrics every ~5 minutes
 	wait_queue_head_t wait_queue;
 	volatile enum nmetric_state state;
-	u64 last_logged_slow_tick; // when the last metric request was posted
+	u64 last_logged_slow_tick; // Tick count from the start to when the last metric was posted
+	u64 last_logged_slow_tick_jiffies; // Last time we posted metrics in jiffies
 	u64 curr[NMETRIC_COUNTER_COUNT]; // metrics for the current session so far
 	u64 prev[NMETRIC_COUNTER_COUNT]; // recorded metrics from the last post
 	u64 freed[NMETRIC_COUNTER_COUNT]; // cache holding metrics that were freed before the posting period was reached

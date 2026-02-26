@@ -40,72 +40,128 @@ extern const char driver_version[];
 
 enum nmetric_cw_id {
 	NMETRIC_CW_ID_UNUSED = 0,
-	NMETRIC_CW_ID_FW_IO_ERROR_COUNT = 11, // internal driver fw_io error count. counted internally using a counter in fw_io_ctx struct
-	NMETRIC_CW_ID_INSTANCE_ID = 12, // instance id
-	NMETRIC_CW_ID_DRIVER_VERSION = 13, // driver version
+	// Total number of internal driver firmware I/O errors, counter appended on driver → hardware execution errors
+	NMETRIC_CW_ID_FW_IO_ERROR_COUNT = 11,
+	// EC2 Instance Identifier, read from DMI board asset tag during driver module initialization
+	NMETRIC_CW_ID_INSTANCE_ID = 12,
+	// Driver version string, initialized during driver build
+	NMETRIC_CW_ID_DRIVER_VERSION = 13,
 
-    // Driver internal metics
+	// Driver internal metics
+	// Maximum time taken for device reset operations across all neuron devices in the instance (ms)
 	NMETRIC_CW_ID_MAX_DEVICE_RESET_TIME_MS = 50,
+	// Maximum time taken for TPB reset operations across all neuron devices in the instance (ms)
 	NMETRIC_CW_ID_MAX_TPB_RESET_TIME_MS = 51,
+	// Average time for device reset operations (ms), calculated from DEVICE_RESET_FAILURE_COUNT and total reset time
 	NMETRIC_CW_ID_AVG_DEVICE_RESET_TIME_MS = 52,
+	// Average time for TPB reset operations (ms), calculated from TPB_RESET_FAILURE_COUNT and total reset time
 	NMETRIC_CW_ID_AVG_TPB_RESET_TIME_MS = 53,
+	// Count of failed device reset operations (timeouts from framework), max wait time in NR_RESET_INIT_MAX_TOTAL_WAIT_TIME_MS
 	NMETRIC_CW_ID_DEVICE_RESET_FAILURE_COUNT = 54,
+	// Count of failed TPB reset operations (timeouts from framework), similar to device reset timeouts
 	NMETRIC_CW_ID_TPB_RESET_FAILURE_COUNT = 55,
+	// Device performance profile identifier for power and performance characteristics, set via performance_profile_tool
 	NMETRIC_CW_ID_PERFORMANCE_PROFILE_ID = 56,
+	// Ultraserver supported modes (only for ULTRASERVER/PDS platforms), values defined in neuron_ultraserver_mode enum
+	NMETRIC_CW_ID_ULTRASERVER_MODES_SUPPORTED = 57,
+	// Ultraserver mode configured on device (only for ULTRASERVER/PDS platforms), values defined in neuron_ultraserver_mode enum
+	NMETRIC_CW_ID_ULTRASERVER_MODE = 58,
+
+	// Platform Utilization Metrics
+	// Percentage of time that the neuron device was executing NEFFs in a given interval, aggregated across NCs
+	// For example, a ND with full utilization of one core with the other idle, will be reported as 50%
+	NMETRIC_CW_ID_NC_UTILIZATION = 90,
 
 	// Extra versions
 	// extra space for reporting multiple versions of the same type in one post
-	NMETRIC_CW_ID_RT_VERSION_BASE = 180, // base id for rt version
+	// Most frequent Runtime version information across all devices, persisted during nrt_init in NDS data store
+	NMETRIC_CW_ID_RT_VERSION_BASE = 180,
 	NMETRIC_CW_ID_RT_VERSION_0 = NMETRIC_CW_ID_RT_VERSION_BASE,
+	// Next most frequent runtime version info across all neuron devices of the instance
 	NMETRIC_CW_ID_RT_VERSION_1,
 	NMETRIC_CW_ID_RT_VERSION_LAST = NMETRIC_CW_ID_RT_VERSION_1, // inclusive of last version
 
+	// Framework version string provided by upstream consumer when calling nrt_init API
 	NMETRIC_CW_ID_FW_VERSION_BASE = 190,
 	NMETRIC_CW_ID_FW_VERSION_0 = NMETRIC_CW_ID_FW_VERSION_BASE,
+	// Framework type provided by upstream consumer during nrt_init, values defined in Runtime nrt_framework_type_t enum
 	NMETRIC_CW_ID_FW_TYPE_0,
+	// Next most frequent framework version string across all neuron devices of the instance
 	NMETRIC_CW_ID_FW_VERSION_1,
+	// Next most frequent framework type across all neuron devices of the instance
 	NMETRIC_CW_ID_FW_TYPE_1,
 	NMETRIC_CW_ID_FW_VERSION_LAST = NMETRIC_CW_ID_FW_TYPE_1,
 
+	// FAL (Framework Abstraction Layer) version string provided by upstream consumer when calling nrt_init API
 	NMETRIC_CW_ID_FAL_VERSION_BASE = 195,
 	NMETRIC_CW_ID_FAL_VERSION_0 = NMETRIC_CW_ID_FAL_VERSION_BASE,
+	// Next most frequent FAL version string across all neuron devices of the instance
 	NMETRIC_CW_ID_FAL_VERSION_1,
 	NMETRIC_CW_ID_FAL_VERSION_LAST = NMETRIC_CW_ID_FAL_VERSION_1,
 
 	// Return codes
-	NMETRIC_CW_ID_NERR_OK = 200, // status ok
-	NMETRIC_CW_ID_NERR_FAIL = 201, // status fail
+	// Successful model load tracking, following NRT_SUCCESS runtime status
+	NMETRIC_CW_ID_NERR_OK = 200,
+	// Generic model load failure tracking, following NRT_FAILURE runtime status
+	NMETRIC_CW_ID_NERR_FAIL = 201,
+	// NRT_INVALID runtime status tracking (invalid NEFF, bad instruction, bad DMA descriptor etc.)
 	NMETRIC_CW_ID_NERR_INVALID = 202,
+	// Resource allocation failures tracking NRT_RESOURCE runtime status errors
 	NMETRIC_CW_ID_NERR_RESOURCE = 204,
+	// nrt_execute operation timeout tracking NRT_TIMEOUT status, max wait time set via NEURON_RT_EXEC_TIMEOUT
 	NMETRIC_CW_ID_NERR_TIMEOUT = 205,
+	// Hardware failure count during runtime execution, tracking NRT_HW_ERROR status
 	NMETRIC_CW_ID_NERR_HW_ERROR = 206,
+	// Async execution requests not queued due to queue overflow, queue size set via NEURON_RT_ASYNC_EXEC_MAX_INFLIGHT_REQUESTS
 	NMETRIC_CW_ID_NERR_QUEUE_FULL = 207,
+	// Resource allocation failures when insufficient neuron cores available, tracks NRT_LOAD_NOT_ENOUGH_NC status
 	NMETRIC_CW_ID_NERR_RESOURCE_NC = 208,
+	// Unsupported NEFF version model load failures, tracking NRT_UNSUPPORTED_NEFF_VERSION status
 	NMETRIC_CW_ID_NERR_UNSUPPORTED_VERSION = 209,
+	// Incorrect input data failures leading to NRT_EXEC_BAD_INPUT during nrt_execute (legacy metric)
 	NMETRIC_CW_ID_NERR_INFER_BAD_INPUT = 212,
+	// NEURON_ISA_TPB_ERROR_TYPE_FP_NAN TPB error notifications, enabled via NEURON_FAIL_ON_NAN environment variable
 	NMETRIC_CW_ID_NERR_INFER_COMPLETED_WITH_NUM_ERR = 213,
+	// Generic TPB error notifications (MEMORY_ERROR, FAKE_ERROR, SEMAPHORE_ERROR, etc.), tracking NRT_EXEC_COMPLETED_WITH_ERR
 	NMETRIC_CW_ID_NERR_INFER_COMPLETED_WITH_ERR = 214,
+	// Numerical computation errors during nrt_execute (deprecated from Runtime v2.25)
 	NMETRIC_CW_ID_NERR_NUMERICAL_ERR = 215,
+	// Model load errors, unused in Runtime (deprecated from Runtime v2.25)
 	NMETRIC_CW_ID_NERR_MODEL_ERR = 216,
+	// Transient SEQUENCER_NONFATAL TPB error notifications that may be retryable (deprecated from Runtime v2.20)
 	NMETRIC_CW_ID_NERR_TRANSIENT_ERR = 217,
+	// Runtime specific errors (deprecated from Runtime v2.25)
 	NMETRIC_CW_ID_NERR_RT_ERR = 218,
-	NMETRIC_CW_ID_NERR_GENERIC_TPB_ERR = 219, // generic notification error
-	                                          // for reference look at "INFER_SUBTYPE_NONE" in
-	                                          // Runtime repo "tdrv/infer_error_subtype_int.c"
+	// Generic TPB errors (FP_UNDERFLOW, FP_INF, FP_OVERFLOW notifications) (deprecated from Runtime v2.25)
+	NMETRIC_CW_ID_NERR_GENERIC_TPB_ERR = 219,
+	// Out-of-bounds access errors during execution, tracking NRT_EXEC_OOB Runtime status
 	NMETRIC_CW_ID_NERR_OOB = 220,
+	// Collective operations errors leading to execution hangs, tracking NRT_EXEC_HW_ERR_COLLECTIVES Runtime status
 	NMETRIC_CW_ID_NERR_HW_ERR_COLLECTIVES = 221,
+	// Total count of HBM Unrepairable Uncorrectable hardware errors across the instance
 	NMETRIC_CW_ID_NERR_HW_ERR_HBM_UE = 222,
+	// Total count of Uncorrectable SRAM errors across the instance
 	NMETRIC_CW_ID_NERR_HW_ERR_NC_UE = 223,
+	// Total count of DMA abort hardware errors across the instance
 	NMETRIC_CW_ID_NERR_HW_ERR_DMA_ABORT = 224,
+	// Count of software semaphore errors
 	NMETRIC_CW_ID_NERR_SW_SEMAPHORE_ERROR = 225,
+	// Count of software event handling errors
 	NMETRIC_CW_ID_NERR_SW_EVENT_ERROR = 226,
+	// Software partial sum collision errors, tracking NEURON_ISA_TPB_ERROR_TYPE_PSUM_COLLISION TPB notifications
 	NMETRIC_CW_ID_NERR_SW_PSUM_COLLISION = 227,
+	// Fatal software sequencer errors, tracking NEURON_ISA_TPB_ERROR_TYPE_SEQUENCER_FATAL TPB notifications
 	NMETRIC_CW_ID_NERR_SW_SEQUENCER_FATAL = 228,
+	// Total count of HBM Repairable Uncorrectable hardware errors across the instance
 	NMETRIC_CW_ID_NERR_HW_ERR_REPAIRABLE_HBM_UE = 229,
 
+	// Bitmap indicating enabled features on device (decimal format), aggregated via bitwise OR across all devices
 	NMETRIC_CW_ID_FEATURE_BITMAP = 250,
+	// Bitmap indicating available sysfs metrics (currently NOT SET), posted on unprocessed cloudwatch id
 	NMETRIC_CW_ID_SYSFS_METRIC_BITMAP = 251,
+	// Global communication identifier initialized by Collectives on all ranks
 	NMETRIC_CW_ID_DEVICE_CLUSTER_ID = 252,
+	// Count of interrupt controller software notification queue overflow errors
 	NMETRIC_CW_ID_NERR_SW_NQ_OVERFLOW = 253,
 };
 
@@ -157,6 +213,7 @@ static const nmetric_def_t nmetric_defs[] = {
 	NMETRIC_COUNTER_DEF(26, POST_TIME_TICK_1, NMETRIC_CW_ID_NERR_SW_PSUM_COLLISION, NDS_EXT_NC_COUNTER_ERR_SW_PSUM_COLLISION),
 	NMETRIC_COUNTER_DEF(27, POST_TIME_TICK_1, NMETRIC_CW_ID_NERR_SW_SEQUENCER_FATAL, NDS_EXT_NC_COUNTER_ERR_SW_SEQUENCER_FATAL),
 	NMETRIC_COUNTER_DEF(28, POST_TIME_TICK_1, NMETRIC_CW_ID_NERR_HW_ERR_REPAIRABLE_HBM_UE, NDS_EXT_NC_COUNTER_HW_ERR_REPAIRABLE_HBM_UE),
+	NMETRIC_UTILIZATION_DEF(29, POST_TIME_ALWAYS, NMETRIC_CW_ID_NC_UTILIZATION, NDS_NC_COUNTER_TIME_IN_USE),
 
 	// bitmap metrics
 	NMETRIC_BITMAP_DEF(0, POST_TIME_TICK_1, NMETRIC_CW_ID_FEATURE_BITMAP, NDS_ND_COUNTER_FEATURE_BITMAP),
@@ -172,6 +229,10 @@ static const nmetric_def_t nmetric_defs[] = {
 	NMETRIC_DRIVER_DEF(NMETRIC_DRIVER_METRICS_IDX_AVG_TPB_RESET_TIME_MS, POST_TIME_TICK_1, NMETRIC_CW_ID_AVG_TPB_RESET_TIME_MS),
 	NMETRIC_DRIVER_DEF(NMETRIC_DRIVER_METRICS_IDX_DEVICE_RESET_FAILURE_COUNT, POST_TIME_TICK_1, NMETRIC_CW_ID_DEVICE_RESET_FAILURE_COUNT),
 	NMETRIC_DRIVER_DEF(NMETRIC_DRIVER_METRICS_IDX_TPB_RESET_FAILURE_COUNT, POST_TIME_TICK_1, NMETRIC_CW_ID_TPB_RESET_FAILURE_COUNT),
+	
+	// ultraserver metrics
+	NMETRIC_DRIVER_USERVER_DEF(0, POST_TIME_TICK_0, NMETRIC_CW_ID_ULTRASERVER_MODES_SUPPORTED),
+	NMETRIC_DRIVER_USERVER_DEF(1, POST_TIME_TICK_0, NMETRIC_CW_ID_ULTRASERVER_MODE),
 };
 static const int nmetric_count = sizeof(nmetric_defs) / sizeof(nmetric_def_t);
 
@@ -299,6 +360,7 @@ static void nmetric_aggregate_nd_counter_entry(struct neuron_device *nd, struct 
 							  curr_metric->ds_id,
 							  &nd->metrics.component_versions[curr_metric->index]);
 		break;
+		case NMETRIC_TYPE_UTILIZATION:
 		case NMETRIC_TYPE_COUNTER:
 			for (nc_id = 0; nc_id < ndhal->ndhal_address_map.nc_per_device; nc_id++) {
 				if (((1 << nc_id) & ndhal->ndhal_address_map.dev_nc_map) == 0) {
@@ -493,6 +555,49 @@ static inline int nmetric_post_version(struct nmetric_versions *versions, const 
 	return written_size;
 }
 
+/**
+ * Function to post utilization stats from an NDS counter, which requires more transformations than a regular counter post
+ */
+static int nmetric_post_utilization(struct neuron_device *nd, u64 *curr_metrics, u64 *prev_metrics,
+				    u64 *freed_metrics, const nmetric_def_t *metric,
+				    struct nmetric_cw_metric *dest, int available_size)
+{
+	int metric_index = metric->index;
+	u64 crt_metric_value = curr_metrics[metric_index] + freed_metrics[metric_index] - prev_metrics[metric_index];
+	u32 elapsed_jiffies = jiffies - nd->metrics.neuron_aggregation.last_logged_slow_tick_jiffies;
+	u64 nsecs_since_last_post = 0;
+
+	if (elapsed_jiffies == 0) { // Be extra safe to avoid division by zero
+		return 0;
+	}
+
+	switch (metric->cw_id) {
+		// The original crt_metric_value will be the aggregated time each core was executing, e.g. nc1 + nc2 ... ncN in picoseconds. So we need
+		// to first normalize this value by dividing by the number of cores to get the average duration a NC spent executing on this device. 
+		// We then convert this to nanoseconds and take the ratio of this usage time to the elapsed time. The metric will be posted as
+		// an int representing the percentage of time the device was being used to execute a NEFF.
+		case NMETRIC_CW_ID_NC_UTILIZATION:
+			nsecs_since_last_post = jiffies_to_nsecs(elapsed_jiffies);
+			crt_metric_value = crt_metric_value / 1000 / ndhal->ndhal_address_map.nc_per_device;
+			crt_metric_value = (crt_metric_value * 100) / nsecs_since_last_post;
+			break;
+	}
+
+	// check if there is enough space in buffer (if there's not, skip, maybe the next one fits)
+	int expected_len = snprintf(NULL, 0, "%llu", crt_metric_value);
+	int metric_size = sizeof(struct nmetric_cw_metric) + expected_len;
+	if (available_size < metric_size) {
+		return 0;
+	}
+
+	// save metrics to buffer
+	dest->id = metric->cw_id;
+	dest->len = expected_len;
+	snprintf(dest->data, expected_len + 1, "%llu", crt_metric_value);
+
+	return metric_size;
+}
+
 static inline int nmetric_post_counter(u64 *curr_metrics, u64 *prev_metrics,
 				       u64 *freed_metrics, const nmetric_def_t *metric,
 				       struct nmetric_cw_metric *dest, int available_size) {
@@ -619,6 +724,39 @@ static inline int nmetric_post_and_reset_driver_metrics(const nmetric_def_t *dri
 	return nmetric_post_u64(driver_final_metric, metric_value, dest, available_size);
 }
 
+static inline int nmetric_post_driver_userver_metrics(const nmetric_def_t *metric, struct nmetric_cw_metric *dest, int available_size)
+{
+	u8 pod_type, pod_id, pod_sz;
+	enum neuron_ultraserver_mode mode;
+	u32 modes_supported;
+	int supported_mode = 0;
+	int i;
+	int metric_value = 0;
+
+	// Only post if npe_pod_info is available and succeeds
+	if (!ndhal->ndhal_npe.npe_pod_info || ndhal->ndhal_npe.npe_pod_info(&pod_type, &pod_id, &pod_sz, &mode, &modes_supported) != 0) {
+		return 0;
+	}
+
+	if (pod_type == NEURON_POD_TYPE_NONE) {
+		return 0;
+	}
+
+	if (metric->cw_id == NMETRIC_CW_ID_ULTRASERVER_MODES_SUPPORTED) {
+		for (i = NEURON_ULTRASERVER_MODE_X4; i <= NEURON_ULTRASERVER_MODE_X1; i++) {
+			if (modes_supported & (1 << i)) {
+				supported_mode = i;
+				break;
+			}
+		}
+		metric_value = supported_mode;
+	} else if (metric->cw_id == NMETRIC_CW_ID_ULTRASERVER_MODE) {
+		metric_value = mode;
+	}
+
+	return nmetric_post_u64(metric, metric_value, dest, available_size);
+}
+
 /**
  * nmetric_post_metrics()
  *
@@ -661,6 +799,10 @@ static void nmetric_post_metrics(struct neuron_device *nd, u64 *curr_metrics, u6
 		case NMETRIC_TYPE_VERSION:
 			data_size += nmetric_post_version(versions, curr_metric, dest, available_size);
 		break;
+		case NMETRIC_TYPE_UTILIZATION:
+			data_size += nmetric_post_utilization(nd, curr_metrics, prev_metrics, freed_metrics,
+							      curr_metric, dest, available_size);
+		break;
 		case NMETRIC_TYPE_COUNTER:
 		case NMETRIC_TYPE_FW_IO_ERR:
 			data_size += nmetric_post_counter(curr_metrics, prev_metrics, freed_metrics,
@@ -672,8 +814,11 @@ static void nmetric_post_metrics(struct neuron_device *nd, u64 *curr_metrics, u6
 		case NMETRIC_TYPE_CONSTANT_U64:
 			data_size += nmetric_post_constant_u64(curr_metric, dest, const_u64_metrics, freed_const_u64_metrics, available_size);
 		break;
-		case NMETRIC_TYPE_DRIVER:
+		case NMETRIC_TYPE_DRIVER_RESET:
 			data_size += nmetric_post_and_reset_driver_metrics(curr_metric, dest, &nd->metrics.driver_metrics, available_size);
+		break;
+		case NMETRIC_TYPE_DRIVER_USERVER:
+			data_size += nmetric_post_driver_userver_metrics(curr_metric, dest, available_size);
 		break;
 		}
 	}
@@ -729,6 +874,7 @@ static void nmetric_cache_shared_bufs(struct neuron_device *nd, u64 *freed_metri
 			memset(&nd->metrics.component_versions[curr_metric->index], 0, sizeof(struct nmetric_versions));
 		break;
 		case NMETRIC_TYPE_COUNTER:
+		case NMETRIC_TYPE_UTILIZATION:
 		case NMETRIC_TYPE_FW_IO_ERR:
 			nd->metrics.ds_freed_metrics_buf[curr_metric->index] = 0;
 		break;
@@ -772,6 +918,7 @@ static void nmetric_start_new_session(struct neuron_device *nd, u64 *curr_metric
 		if (!nmetric_check_post_tick(tick, curr_metric))
 			continue;
 		switch(curr_metric->type) {
+			case NMETRIC_TYPE_UTILIZATION:
 			case NMETRIC_TYPE_COUNTER:
 				prev_metrics[curr_metric->index] = curr_metrics[curr_metric->index];
 			break;
@@ -874,6 +1021,11 @@ static int nmetric_thread_fn(void *arg)
 			break;
 		};
 
+		// do not attempt to post metrics if the device isn't operational
+		if (nd->device_state != NEURON_DEVICE_STATE_READY) {
+			continue;
+		}
+
 		// There are some metrics that we sample at a relatively higher frequency.  Do that here.
 		nmetric_sample_high_freq(nd);
 
@@ -904,6 +1056,7 @@ static int nmetric_thread_fn(void *arg)
 				tick = (tick + 1) % POST_TICK_COUNT;
 			}
 			nd->metrics.neuron_aggregation.last_logged_slow_tick = current_slow_tick;
+			nd->metrics.neuron_aggregation.last_logged_slow_tick_jiffies = jiffies;
 		}
 	}
 

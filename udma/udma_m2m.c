@@ -149,7 +149,6 @@ int udma_m2m_init_queue(struct udma *udma, int qid, u32 eng_id, u32 m2s_ring_siz
 	int ret;
 	struct udma_q_params qp;
 
-	BUG_ON(udma == NULL);
 	/* the h/w only supports rings base addr and end addr that are 256 byte aligned, check both m2s & s2m */
 	if (m2s_ring != NULL && HAS_ALIGNMENT(m2s_ring->addr, UDMA_QUEUE_ADDR_BYTE_ALIGNMENT) == false) {
 		pr_err("invalid m2s ring alignment. Start addr must be %u byte aligned. base addr: 0x%llx\n", UDMA_QUEUE_ADDR_BYTE_ALIGNMENT, m2s_ring->addr);
@@ -370,7 +369,6 @@ int udma_m2m_copy_prepare_one(struct udma *udma, u32 qid, dma_addr_t s_addr, dma
 	struct udma_q *rxq;
 	int ret;
 
-	BUG_ON(udma == NULL);
 	if (qid >= udma->num_of_queues) {
 		return -1;
 	}
@@ -401,8 +399,13 @@ int udma_m2m_copy_prepare_one(struct udma *udma, u32 qid, dma_addr_t s_addr, dma
 
 	union udma_desc *rx_desc = udma_desc_get(rxq);
 	union udma_desc *tx_desc = udma_desc_get(txq);
+
+	if (rx_desc == NULL || tx_desc == NULL) {
+		return -EINVAL;
+	}
+
 	return udma_m2m_build_descriptor(rx_desc, tx_desc, udma_ring_id_get(rxq),
-					 udma_ring_id_get(txq), s_addr, d_addr, size, barrier_type, set_dst_int);
+					udma_ring_id_get(txq), s_addr, d_addr, size, barrier_type, set_dst_int);
 }
 
 /* Start DMA data transfer for m2s_count/s2m_count number or descriptors.
@@ -414,8 +417,6 @@ int udma_m2m_copy_start(struct udma *udma, u32 qid, u32 m2s_count, u32 s2m_count
 	struct udma_q *txq;
 	struct udma_q *rxq;
 	int ret;
-
-	BUG_ON(udma == NULL);
 
 	if (qid >= udma->num_of_queues) {
 		return -1;
@@ -435,9 +436,15 @@ int udma_m2m_copy_start(struct udma *udma, u32 qid, u32 m2s_count, u32 s2m_count
 	if (s2m_count > rxq->size) {
 		return -1;
 	}
-	udma_desc_action_add(rxq, s2m_count);
+	ret = udma_desc_action_add(rxq, s2m_count);
+	if (ret) {
+		return ret;
+	}
 	if (m2s_count > 0) {
-		udma_desc_action_add(txq, m2s_count);
+		ret = udma_desc_action_add(txq, m2s_count);
+		if (ret) {
+			return ret;
+		}
 	}
 	return ret;
 }

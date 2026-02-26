@@ -986,6 +986,7 @@ static int ndma_build_n_issue_zc_descs( struct ndma_h2t_zcdma_context * dma_ctx)
 				break;
 			}
 			contig_size += PAGE_SIZE;
+			tmp = next;
 		}
 
 		if (dma_ctx->direction) { // write to device
